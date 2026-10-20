@@ -64,10 +64,6 @@ If it stays unavailable for a long time, check your Bluetooth proxy. If the prox
 - Only tested on one unit (an E7+ two-channel, HardwareType 65). Other versions may behave differently. If yours doesn't work, please open an issue.
 - Not affiliated with or endorsed by Secure Controls or Horstmann. Use at your own risk.
 
-## How it talks to the heater
-
-For anyone curious, or wanting to support another model: the unit uses a Nordic UART-style Bluetooth service. Messages are JSON-RPC, AES-128 encrypted after a four-step challenge-response login, and split into numbered 19-byte chunks. The wire format is in `protocol.py`, polling and control in `coordinator.py`, the weekly schedule format in `schedule.py`, and key retrieval in `commission.py`.
-
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
