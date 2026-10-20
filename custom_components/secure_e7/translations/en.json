@@ -1,0 +1,89 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Immersion Heater (E7+)",
+        "description": "Enter the Bluetooth MAC address of your Secure / Horstmann E7+ immersion controller.",
+        "data": {
+          "mac": "Bluetooth MAC address"
+        }
+      },
+      "method": {
+        "title": "How should we get the key?",
+        "menu_options": {
+          "commission": "Pull the key automatically (recommended)",
+          "manual": "I already have my key"
+        }
+      },
+      "commission": {
+        "title": "Commission the heater",
+        "description": "On the heater, hold the Menu button for about 8 seconds until the display shows it is in commissioning mode, then press Submit.\n\nThis claims the device for Home Assistant, so the Secure phone app will no longer control it."
+      },
+      "manual": {
+        "title": "Enter your key",
+        "description": "Paste the 16-byte BLE key for this device (32 hexadecimal characters).",
+        "data": {
+          "key": "BLE key (32 hex characters)"
+        }
+      }
+    },
+    "error": {
+      "not_reachable": "Couldn't reach the heater over Bluetooth. Make sure a Bluetooth proxy is in range of it.",
+      "not_commissioning": "The heater is not in commissioning mode. Hold Menu for about 8 seconds until the screen shows commissioning mode, then try again.",
+      "no_key": "The heater was claimed but did not return its new key. Put it back in commissioning mode and try again.",
+      "ble_error": "A Bluetooth error occurred while commissioning. Please try again.",
+      "timeout": "The heater stopped responding. Check it is in range of your Bluetooth proxy, put it back in commissioning mode and try again.",
+      "bad_key": "That doesn't look like a 32-character hex key.",
+      "unknown": "Something went wrong. Check the Home Assistant logs and try again."
+    },
+    "abort": {
+      "already_configured": "This immersion heater is already set up."
+    }
+  },
+  "services": {
+    "get_schedule": {
+      "name": "Get schedule",
+      "description": "Read the weekly hot-water programme from the heater into Home Assistant. Returns it as a response and updates the Schedule sensor.",
+      "fields": {
+        "object_id": {
+          "name": "Object ID",
+          "description": "Diagnostic: read this schedule object instead and return the raw reply without updating the Schedule sensor."
+        }
+      }
+    },
+    "set_schedule": {
+      "name": "Set schedule",
+      "description": "Write the weekly hot-water programme to the heater. Give each day to change as a list of up to 3 on/off windows on the 15-minute grid; an empty list means off all day. Days left out keep their current windows.",
+      "fields": {
+        "monday": {
+          "name": "Monday",
+          "description": "ON windows for Monday, for example [{\"on\": \"02:15\", \"off\": \"06:00\"}]. An empty list means off all day."
+        },
+        "tuesday": {
+          "name": "Tuesday",
+          "description": "ON windows for Tuesday, for example [{\"on\": \"02:15\", \"off\": \"06:00\"}]. An empty list means off all day."
+        },
+        "wednesday": {
+          "name": "Wednesday",
+          "description": "ON windows for Wednesday, for example [{\"on\": \"02:15\", \"off\": \"06:00\"}]. An empty list means off all day."
+        },
+        "thursday": {
+          "name": "Thursday",
+          "description": "ON windows for Thursday, for example [{\"on\": \"02:15\", \"off\": \"06:00\"}]. An empty list means off all day."
+        },
+        "friday": {
+          "name": "Friday",
+          "description": "ON windows for Friday, for example [{\"on\": \"02:15\", \"off\": \"06:00\"}]. An empty list means off all day."
+        },
+        "saturday": {
+          "name": "Saturday",
+          "description": "ON windows for Saturday, for example [{\"on\": \"02:15\", \"off\": \"06:00\"}]. An empty list means off all day."
+        },
+        "sunday": {
+          "name": "Sunday",
+          "description": "ON windows for Sunday, for example [{\"on\": \"02:15\", \"off\": \"06:00\"}]. An empty list means off all day."
+        }
+      }
+    }
+  }
+}

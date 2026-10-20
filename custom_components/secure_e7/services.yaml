@@ -1,0 +1,46 @@
+get_schedule:
+  fields:
+    object_id:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+set_schedule:
+  fields:
+    monday:
+      required: false
+      example: '[{"on": "02:15", "off": "06:00"}]'
+      selector:
+        object:
+    tuesday:
+      required: false
+      example: '[{"on": "02:15", "off": "06:00"}]'
+      selector:
+        object:
+    wednesday:
+      required: false
+      example: '[{"on": "02:15", "off": "06:00"}]'
+      selector:
+        object:
+    thursday:
+      required: false
+      example: '[{"on": "02:15", "off": "06:00"}]'
+      selector:
+        object:
+    friday:
+      required: false
+      example: '[{"on": "02:15", "off": "06:00"}]'
+      selector:
+        object:
+    saturday:
+      required: false
+      example: '[{"on": "02:15", "off": "06:00"}]'
+      selector:
+        object:
+    sunday:
+      required: false
+      example: '[{"on": "02:15", "off": "06:00"}]'
+      selector:
+        object:
