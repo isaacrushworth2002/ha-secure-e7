@@ -57,31 +57,31 @@
       "fields": {
         "monday": {
           "name": "Monday",
-          "description": "ON windows for Monday, for example [{\"on\": \"02:15\", \"off\": \"06:00\"}]. An empty list means off all day."
+          "description": "ON windows for Monday, as a list of on and off times. An empty list means off all day."
         },
         "tuesday": {
           "name": "Tuesday",
-          "description": "ON windows for Tuesday, for example [{\"on\": \"02:15\", \"off\": \"06:00\"}]. An empty list means off all day."
+          "description": "ON windows for Tuesday, as a list of on and off times. An empty list means off all day."
         },
         "wednesday": {
           "name": "Wednesday",
-          "description": "ON windows for Wednesday, for example [{\"on\": \"02:15\", \"off\": \"06:00\"}]. An empty list means off all day."
+          "description": "ON windows for Wednesday, as a list of on and off times. An empty list means off all day."
         },
         "thursday": {
           "name": "Thursday",
-          "description": "ON windows for Thursday, for example [{\"on\": \"02:15\", \"off\": \"06:00\"}]. An empty list means off all day."
+          "description": "ON windows for Thursday, as a list of on and off times. An empty list means off all day."
         },
         "friday": {
           "name": "Friday",
-          "description": "ON windows for Friday, for example [{\"on\": \"02:15\", \"off\": \"06:00\"}]. An empty list means off all day."
+          "description": "ON windows for Friday, as a list of on and off times. An empty list means off all day."
         },
         "saturday": {
           "name": "Saturday",
-          "description": "ON windows for Saturday, for example [{\"on\": \"02:15\", \"off\": \"06:00\"}]. An empty list means off all day."
+          "description": "ON windows for Saturday, as a list of on and off times. An empty list means off all day."
         },
         "sunday": {
           "name": "Sunday",
-          "description": "ON windows for Sunday, for example [{\"on\": \"02:15\", \"off\": \"06:00\"}]. An empty list means off all day."
+          "description": "ON windows for Sunday, as a list of on and off times. An empty list means off all day."
         }
       }
     }
