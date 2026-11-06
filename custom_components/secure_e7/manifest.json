@@ -9,6 +9,9 @@
       "service_uuid": "b973f2e0-b19e-11e2-9e96-0800200c9a66"
     }
   ],
+  "categories": [
+    "climate.water_heaters"
+  ],
   "codeowners": [
     "@isaacrushworth2002"
   ],
