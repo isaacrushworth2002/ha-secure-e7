@@ -58,6 +58,7 @@ def importer(monkeypatch):
         "homeassistant.util.dt": stub(
             "homeassistant.util.dt",
             utc_from_timestamp=lambda ts: datetime.fromtimestamp(ts, tz=timezone.utc),
+            DEFAULT_TIME_ZONE=timezone.utc,
         ),
     }
     for name, mod in mods.items():

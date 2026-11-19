@@ -43,7 +43,7 @@ def statistic_id(mac: str, suffix: str) -> str:
 async def async_import_daily_energy(hass: HomeAssistant, mac: str, days: list[dict]) -> None:
     if not days:
         return
-    first = daily_statistics(days, "total_kwh")
+    first = daily_statistics(days, "total_kwh", tz=dt_util.DEFAULT_TIME_ZONE)
     if not first:
         return
     first_start = first[0]["start"]
@@ -60,7 +60,7 @@ async def async_import_daily_energy(hass: HomeAssistant, mac: str, days: list[di
             {"sum"},
         )
         base = (earlier.get(stat_id) or [{}])[-1].get("sum") or 0.0
-        rows = daily_statistics(days, key, base)
+        rows = daily_statistics(days, key, base, dt_util.DEFAULT_TIME_ZONE)
         metadata = StatisticMetaData(
             mean_type=StatisticMeanType.NONE,
             has_sum=True,

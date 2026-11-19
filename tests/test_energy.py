@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from conftest import load
 
@@ -61,3 +61,13 @@ def test_each_series_uses_its_own_key():
     days = [row(0, 3.0, boost=1.0, offpeak=2.0)]
     assert energy.daily_statistics(days, "boost_kwh")[0]["sum"] == 1.0
     assert energy.daily_statistics(days, "offpeak_kwh")[0]["sum"] == 2.0
+
+
+def test_a_row_stamped_at_local_midnight_is_booked_to_its_local_date():
+    bst = timezone(timedelta(hours=1))
+    days = [row(0, 1.0, offset=-3600), row(1, 2.0, offset=-3600)]
+    rows = energy.daily_statistics(days, "total_kwh", tz=bst)
+    assert [r["start"] for r in rows] == [
+        datetime.fromtimestamp(T0 + d * DAY, tz=timezone.utc) for d in range(2)
+    ]
+    assert [r["sum"] for r in rows] == [1.0, 3.0]
