@@ -66,6 +66,7 @@ from .const import (
 from .backoff import poll_interval
 from .energy import gap_energy_wh
 from .energy_statistics import async_import_daily_energy
+from .resilience import PollHealth
 from .protocol import (
     Reassembler,
     aes_decrypt,
@@ -149,7 +150,8 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._energy_wh = 0.0  # estimated, integrated while the element is on
         self._last_energy_ts: float | None = None
         self._poll_count = 0
-        self._failures = 0  # failed polls in a row, for backoff
+        self._health = PollHealth()
+        self.last_success = None  # datetime of the last good poll
         self._poll_seconds = SCAN_INTERVAL_SECONDS
         self._consumption: list[dict] = []  # cached daily metered history
         self._consumption_logged = False
@@ -298,25 +300,34 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         try:
             async with self._session():
                 state = await self._poll()
-        except UpdateFailed:
-            self._failures += 1
+        except UpdateFailed as err:
+            keep = self._health.failure(time.monotonic())
             self._set_poll_interval()
+            if keep and self.data is not None:
+                _LOGGER.debug(
+                    "secure_e7 %s poll %d failed, keeping last state: %s",
+                    self._mac,
+                    self._health.failures,
+                    err,
+                )
+                return self.data
             raise
-        if self._failures:
-            _LOGGER.info("secure_e7 %s back after %d failed polls", self._mac, self._failures)
-            self._failures = 0
+        missed = self._health.success(time.monotonic())
+        self.last_success = dt_util.utcnow()
+        if missed:
+            _LOGGER.info("secure_e7 %s back after %d failed polls", self._mac, missed)
             self._set_poll_interval()
         return state
 
     def _set_poll_interval(self) -> None:
-        seconds = poll_interval(self._failures, SCAN_INTERVAL_SECONDS)
+        seconds = poll_interval(self._health.failures, SCAN_INTERVAL_SECONDS)
         if seconds != self._poll_seconds:
             self._poll_seconds = seconds
             if seconds != SCAN_INTERVAL_SECONDS:
                 _LOGGER.info(
                     "secure_e7 %s: %d failed polls in a row, next try in %ds",
                     self._mac,
-                    self._failures,
+                    self._health.failures,
                     seconds,
                 )
             self.update_interval = timedelta(seconds=seconds)

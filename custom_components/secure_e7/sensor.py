@@ -15,7 +15,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfEnergy, UnitOfPower, UnitOfTime
+from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower, UnitOfTime
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
@@ -39,6 +39,7 @@ async def async_setup_entry(hass, entry, async_add_entities: AddEntitiesCallback
             HoursTodaySensor(coordinator, "hours_today_boost", "Boost Hours Today"),
             HoursTodaySensor(coordinator, "hours_today_offpeak", "Off-Peak Hours Today"),
             ScheduleSensor(coordinator),
+            LastSuccessSensor(coordinator),
         ]
     )
 
@@ -189,3 +190,18 @@ class ScheduleSensor(SecureE7Entity, SensorEntity):
     def extra_state_attributes(self):
         sched = self._schedule
         return None if sched is None else dict(sched["days"])
+
+
+class LastSuccessSensor(SecureE7Entity, SensorEntity):
+    """When the heater last answered a poll."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:clock-check-outline"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "last_success", "Last Successful Poll")
+
+    @property
+    def native_value(self) -> datetime | None:
+        return self.coordinator.last_success
