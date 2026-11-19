@@ -198,3 +198,40 @@ def test_the_same_edge_again_a_week_later_when_it_is_the_only_one():
     days = {d: [] for d in schedule.DAYS}
     days["monday"] = [{"on": "07:00", "off": "08:00"}]
     assert schedule.next_change(days, 0, 8 * 60) == ("07:00", "on")
+
+
+def test_an_empty_day_encodes_as_three_zero_length_pairs_and_reads_back_empty():
+    encoded = schedule.encode_days({"wednesday": []})["wednesday"]
+    assert encoded == [{"O": 720, "T": 1}, {"O": 720, "T": 0}] * 3
+    slots = schedule.splice(REAL_DAY * 7, {"wednesday": encoded})
+    assert slots[12:18] == encoded
+    days = schedule.parse_schedule({"R": [{"I": 1, "D": slots}]})["days"]
+    assert days["wednesday"] == []
+    assert days["tuesday"] == schedule._windows(REAL_DAY)
+
+
+def test_an_empty_week_encodes_and_reads_back_empty():
+    slots = schedule.encode_schedule({d: [] for d in schedule.DAYS})
+    assert len(slots) == 42
+    days = schedule.parse_schedule({"R": [{"I": 1, "D": slots}]})["days"]
+    assert all(windows == [] for windows in days.values())
+
+
+def test_spare_windows_follow_a_late_real_window_so_times_never_go_backwards():
+    encoded = schedule.encode_days({"friday": [{"on": "13:00", "off": "15:00"}]})["friday"]
+    times = [slot["O"] for slot in encoded]
+    assert times == sorted(times)
+    assert schedule._windows(encoded) == [{"on": "13:00", "off": "15:00"}]
+
+
+def test_messages_name_the_day_and_the_problem():
+    with pytest.raises(ValueError, match=r"monday: at most 3 ON windows a day, got 4"):
+        schedule.encode_days({"monday": [{"on": f"0{h}:00", "off": f"0{h}:30"} for h in range(1, 5)]})
+    with pytest.raises(ValueError, match=r"01:00-04:00 and 04:00-05:00 overlap or touch"):
+        schedule.encode_days({"monday": [{"on": "04:00", "off": "05:00"}, {"on": "01:00", "off": "04:00"}]})
+    with pytest.raises(ValueError, match="quote times"):
+        schedule.encode_days({"monday": [{"on": "6", "off": "07:00"}]})
+    with pytest.raises(ValueError, match="latest is 23:45"):
+        schedule.encode_days({"monday": [{"on": "22:00", "off": "24:00"}]})
+    with pytest.raises(ValueError, match="unknown days: someday"):
+        schedule.encode_days({"someday": []})

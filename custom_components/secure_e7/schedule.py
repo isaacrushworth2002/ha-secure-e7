@@ -93,9 +93,9 @@ def _minute(text) -> int:
         hh, mm = str(text).split(":")
         hour, minute = int(hh), int(mm)
     except ValueError:
-        raise ValueError(f"time {text!r} is not HH:MM") from None
+        raise ValueError(f"time {text!r} is not HH:MM (quote times in YAML)") from None
     if not (0 <= hour < 24 and 0 <= minute < 60):
-        raise ValueError(f"time {text!r} is not HH:MM")
+        raise ValueError(f"time {text!r} is not HH:MM (latest is 23:45)")
     if minute % GRID_MINUTES:
         raise ValueError(f"time {text!r} is not on the 15-minute grid")
     return hour * 60 + minute
@@ -103,19 +103,22 @@ def _minute(text) -> int:
 
 def _day_slots(day: str, windows) -> list[dict]:
     if len(windows) > WINDOWS_PER_DAY:
-        raise ValueError(f"{day}: at most {WINDOWS_PER_DAY} ON windows a day")
+        raise ValueError(f"{day}: at most {WINDOWS_PER_DAY} ON windows a day, got {len(windows)}")
     pairs = []
     for window in windows:
         if not isinstance(window, dict) or "on" not in window or "off" not in window:
-            raise ValueError(f"{day}: each window needs on and off")
+            raise ValueError(f"{day}: each window needs on and off, like {{'on': '02:15', 'off': '06:00'}}")
         on, off = _minute(window["on"]), _minute(window["off"])
         if on >= off:
             raise ValueError(f"{day}: on {window['on']} must be before off {window['off']}")
         pairs.append((on, off))
     pairs.sort()
-    for (_, prev_off), (on, _) in zip(pairs, pairs[1:]):
+    for (prev_on, prev_off), (on, off) in zip(pairs, pairs[1:]):
         if on <= prev_off:
-            raise ValueError(f"{day}: windows overlap or touch")
+            raise ValueError(
+                f"{day}: windows {_hhmm(prev_on)}-{_hhmm(prev_off)} and {_hhmm(on)}-{_hhmm(off)} "
+                "overlap or touch; join them into one"
+            )
     spare = max([SPARE_AT] + [off for _, off in pairs])
     pairs += [(spare, spare)] * (WINDOWS_PER_DAY - len(pairs))
     return [slot for on, off in pairs for slot in ({K_OFFSET: on, K_STATE: 1}, {K_OFFSET: off, K_STATE: 0})]
@@ -126,7 +129,7 @@ def encode_days(days: dict) -> dict[str, list[dict]]:
     device slots, enforcing the device limits. Raises ValueError with a reason."""
     unknown = [day for day in days if day not in DAYS]
     if unknown:
-        raise ValueError(f"unknown days: {', '.join(unknown)}")
+        raise ValueError(f"unknown days: {', '.join(map(str, unknown))}")
     return {day: _day_slots(day, windows) for day, windows in days.items()}
 
 
