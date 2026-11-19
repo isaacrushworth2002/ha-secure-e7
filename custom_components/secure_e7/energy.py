@@ -7,6 +7,10 @@ from .consumption import SECONDS_PER_DAY, row_date
 from .schedule import DAYS
 
 
+KEEP_DAYS = 40  # retention of the boost log and the programme snapshots
+MAX_BOOST = 3 * 3600  # seconds; the longest boost offered is 2 hours
+
+
 def gap_energy_wh(on: bool | None, watts: float, elapsed: float, max_gap: float) -> float:
     """Wh to credit for the time since the last successful poll.
 
@@ -59,7 +63,7 @@ def offpeak_spans(windows: list[dict], day: date, minutes: float, tz: tzinfo) ->
     return spans
 
 
-def note_boost(log: list[list], active: bool, now: float, keep: float = 40 * SECONDS_PER_DAY) -> bool:
+def note_boost(log: list[list], active: bool, now: float, keep: float = KEEP_DAYS * SECONDS_PER_DAY) -> bool:
     """Open or close the boost record from a poll. True if the log changed.
 
     An entry is [start, end], end None while the boost runs.
@@ -76,12 +80,17 @@ def note_boost(log: list[list], active: bool, now: float, keep: float = 40 * SEC
 
 
 def boost_spans(boosts: list[list], day: date, tz: tzinfo, now: float) -> list[tuple]:
-    """The recorded boosts that overlap the local day, cut at its edges."""
+    """The recorded boosts that overlap the local day, cut at its edges.
+
+    No boost runs longer than MAX_BOOST, so a record left open across a restart
+    cannot claim more than that.
+    """
     lo, hi = _local(day, 0, tz), _local(day, 24 * 60, tz)
     spans = []
     for start, end in boosts:
         a = max(datetime.fromtimestamp(start, timezone.utc), lo)
-        b = min(datetime.fromtimestamp(now if end is None else end, timezone.utc), hi)
+        stop = min(now if end is None else end, start + MAX_BOOST)
+        b = min(datetime.fromtimestamp(stop, timezone.utc), hi)
         if b > a:
             spans.append((a, b))
     return spans
@@ -115,12 +124,15 @@ def daily_statistics(
     schedule: dict | None = None,
     boosts: list[list] | None = None,
     now: float = 0.0,
+    snapshots: dict[str, list[dict]] | None = None,
 ) -> list[dict]:
     """Cumulative hourly rows for external statistics.
 
     The device only meters whole days. Off-peak kWh is spread over the hours the
     element ran (offpeak_spans, from the day's windows in `schedule`, a
-    {weekday name: [{"on", "off"}]} map, and the actual minutes), and boost kWh
+    {weekday name: [{"on", "off"}]} map, and the actual minutes), or from
+    `snapshots`, the windows a date had when it was recorded ({ISO date: windows}),
+    which win over `schedule` so a later edit does not move past days, and boost kWh
     over the boosts recorded in `boosts` ([start, end] timestamps). Anything that
     cannot be placed goes in the first hour of the day (see day_start and
     consumption.row_date for `tz`). `base` is the cumulative sum already recorded
@@ -132,7 +144,9 @@ def daily_statistics(
             by_day[row_date(row["ts"], tz)] = row
     hours: dict[datetime, float] = {}
     for day, row in by_day.items():
-        windows = (schedule or {}).get(DAYS[day.weekday()]) or []
+        windows = (snapshots or {}).get(day.isoformat())
+        if windows is None:
+            windows = (schedule or {}).get(DAYS[day.weekday()]) or []
         placed: dict[datetime, float] = {}
         if key != "boost_kwh":
             minutes = round(float(row.get("offpeak_actual_h") or 0.0) * 60)
@@ -141,7 +155,11 @@ def daily_statistics(
         if key != "offpeak_kwh":
             boost = float(row.get("boost_kwh") or 0.0) if key == "total_kwh" else float(row[key])
             _add(placed, spread(boost, boost_spans(boosts or [], day, tz, now)))
-        rest = float(row[key]) - sum(placed.values())
+        value = float(row[key])
+        if value >= 0 and sum(placed.values()) > value:
+            scale = value / sum(placed.values())
+            placed = {hour: kwh * scale for hour, kwh in placed.items()}
+        rest = value - sum(placed.values())
         first = day_start(row["ts"], tz)
         if abs(rest) > 1e-9 or not placed:
             placed[first] = placed.get(first, 0.0) + rest

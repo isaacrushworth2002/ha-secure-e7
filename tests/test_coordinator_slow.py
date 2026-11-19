@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, time, timezone
 
 import pytest
 
@@ -278,7 +279,7 @@ def test_polls_record_a_boost_and_the_import_gets_it_with_the_programme(coordina
     c = prepare(coordinator_env)
     sent = []
 
-    async def importer(hass, mac, days, schedule, boosts, now):
+    async def importer(hass, mac, days, schedule, boosts, now, snapshots):
         sent.append((days, schedule, [list(b) for b in boosts]))
 
     coordinator_env.module.async_import_daily_energy = importer
@@ -291,3 +292,41 @@ def test_polls_record_a_boost_and_the_import_gets_it_with_the_programme(coordina
     assert len(sent) == 1
     days, schedule, boosts = sent[0]
     assert schedule == {"monday": []} and len(boosts) == 1 and boosts[0][1] >= boosts[0][0]
+
+
+def test_a_day_keeps_the_windows_it_first_had_when_the_programme_is_edited(coordinator_env):
+    c = prepare(coordinator_env)
+    sent = []
+
+    async def importer(hass, mac, days, schedule, boosts, now, snapshots):
+        sent.append((schedule, snapshots))
+
+    coordinator_env.module.async_import_daily_energy = importer
+    old = [{"on": "02:00", "off": "06:00"}]
+    new = [{"on": "10:00", "off": "11:00"}]
+    today = datetime.now(timezone.utc).date()
+    days = [{"ts": int(datetime.combine(today, time(), timezone.utc).timestamp())}]
+    day = today.isoformat()
+    weekday = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")[today.weekday()]
+    c._schedule = {"days": {weekday: old}}
+    asyncio.run(c._import_statistics(days))
+    c._schedule = {"days": {weekday: new}}
+    asyncio.run(c._import_statistics(days))
+    assert sent[0][1][day] == old and sent[1][1][day] == old
+    assert sent[1][0] == {weekday: new}
+    assert c._boost_store.saved["programmes"][day] == old
+
+
+def test_snapshots_and_boosts_come_back_after_a_restart_and_junk_is_ignored(coordinator_env):
+    c = prepare(coordinator_env)
+    c._boost_store.saved = {
+        "boosts": [[1.0, 2.0], [3.0, None], "x", [1, 2, 3], ["a", 1]],
+        "programmes": {"2026-11-14": [{"on": "02:00", "off": "03:00"}], "bad": 5},
+    }
+    asyncio.run(c._load_boosts())
+    assert c._boosts == [[1.0, 2.0], [3.0, None]]
+    assert c._programmes == {"2026-11-14": [{"on": "02:00", "off": "03:00"}]}
+    c2 = prepare(coordinator_env)
+    c2._boost_store.saved = ["not", "a", "dict"]
+    asyncio.run(c2._load_boosts())
+    assert c2._boosts == [] and c2._programmes == {}

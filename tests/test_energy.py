@@ -273,3 +273,40 @@ def test_old_boosts_are_dropped():
     log = [[0.0, 10.0]]
     energy.note_boost(log, True, 50 * DAY)
     assert log == [[50 * DAY, None]]
+
+
+def test_a_snapshot_of_the_day_wins_over_the_current_programme():
+    ts = int(utc(2026, 11, 14).timestamp())
+    edited = {"saturday": [{"on": "10:00", "off": "12:00"}]}
+    snap = {"2026-11-14": WINDOW}
+    rows = energy.daily_statistics(
+        [night(ts, 1.5, 30)], "offpeak_kwh", tz=LONDON, schedule=edited, snapshots=snap
+    )
+    assert placed(rows) == {utc(2026, 11, 14, 2): 1.5}
+    rows = energy.daily_statistics([night(ts, 1.5, 30)], "offpeak_kwh", tz=LONDON, schedule=edited)
+    assert placed(rows) == {utc(2026, 11, 14, 10): 1.5}
+
+
+def test_an_empty_snapshot_does_not_fall_back_to_the_current_programme():
+    ts = int(utc(2026, 11, 14).timestamp())
+    rows = energy.daily_statistics(
+        [night(ts, 1.5, 30)], "offpeak_kwh", tz=LONDON, schedule=NIGHT, snapshots={"2026-11-14": []}
+    )
+    assert placed(rows) == {utc(2026, 11, 14): 1.5}
+
+
+def test_placed_energy_over_the_row_total_never_lowers_the_sum():
+    ts = int(utc(2026, 11, 14).timestamp())
+    day = night(ts, 3.0, 60, boost=1.0)
+    day["total_kwh"] = 3.5
+    boosts = [[ts + 3600.0, ts + 7200.0]]
+    rows = energy.daily_statistics([day], "total_kwh", tz=LONDON, schedule=NIGHT, boosts=boosts, now=ts + DAY)
+    steps = list(placed(rows).values())
+    assert all(step >= 0 for step in steps)
+    assert rows[-1]["sum"] == 3.5
+
+
+def test_a_boost_left_open_cannot_claim_more_than_the_longest_boost():
+    ts = int(utc(2026, 11, 14).timestamp())
+    spans = energy.boost_spans([[ts + 3600.0, None]], utc(2026, 11, 14).date(), timezone.utc, ts + DAY)
+    assert spans == [(utc(2026, 11, 14, 1), utc(2026, 11, 14, 4))]

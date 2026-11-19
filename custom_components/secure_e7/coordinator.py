@@ -64,7 +64,7 @@ from .const import (
 )
 from .backoff import poll_interval
 from .consumption import latest_row, parse_consumption, row_date
-from .energy import gap_energy_wh, note_boost
+from .energy import KEEP_DAYS, gap_energy_wh, note_boost
 from .energy_statistics import async_import_daily_energy
 from .resilience import PendingWrite, PollHealth, with_retries
 from .protocol import (
@@ -77,7 +77,7 @@ from .protocol import (
     unframe,
 )
 from .status import IncompleteStatus, complete_status, parse_status
-from .schedule import encode_days, next_change, parse_schedule, read_slots, splice
+from .schedule import DAYS, encode_days, next_change, parse_schedule, read_slots, splice
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -137,6 +137,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._boosts: list[list] = []  # [start, end] timestamps of boosts seen in polls
         self._boost_store = Store(hass, 1, f"{DOMAIN}_boosts_{mac.replace(':', '').lower()}")
         self._boosts_loaded = False
+        self._programmes: dict[str, list] = {}  # ISO date -> that day's windows when first seen
         self._schedule: dict | None = None
         self._schedule_raw: str | None = None  # parsed weekly programme
         self._slow_task: asyncio.Task | None = None
@@ -532,7 +533,12 @@ class SecureE7Coordinator(DataUpdateCoordinator):
 
     def _note_boost(self, active: bool) -> None:
         if self._boosts_loaded and note_boost(self._boosts, active, time.time()):
-            self._boost_store.async_delay_save(lambda: {"boosts": self._boosts}, 10)
+            self._save_boosts()
+
+    def _save_boosts(self) -> None:
+        self._boost_store.async_delay_save(
+            lambda: {"boosts": self._boosts, "programmes": self._programmes}, 10
+        )
 
     async def _load_boosts(self) -> None:
         if self._boosts_loaded:
@@ -542,18 +548,53 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("secure_e7 boost log not read: %r", err)
             saved = None
-        self._boosts = (saved or {}).get("boosts", [])
+        saved = saved if isinstance(saved, dict) else {}
+        boosts = saved.get("boosts")
+        programmes = saved.get("programmes")
+        self._boosts = [
+            [b[0], b[1]]
+            for b in boosts if isinstance(boosts, list) and isinstance(b, list) and len(b) == 2
+            and isinstance(b[0], (int, float)) and (b[1] is None or isinstance(b[1], (int, float)))
+        ] if isinstance(boosts, list) else []
+        self._programmes = (
+            {k: v for k, v in programmes.items() if isinstance(v, list)}
+            if isinstance(programmes, dict) else {}
+        )
         self._boosts_loaded = True
+
+    def _snapshot_programmes(self, days: list[dict]) -> None:
+        """Keep each day's windows as they were when the day first appeared."""
+        schedule = (self._schedule or {}).get("days")
+        if not schedule:
+            return
+        tz = dt_util.DEFAULT_TIME_ZONE
+        today = dt_util.now().date()
+        keep = (today - timedelta(days=KEEP_DAYS)).isoformat()
+        dates = {row_date(row["ts"], tz) for row in days} | {today}
+        added = False
+        for day in dates:
+            key = day.isoformat()
+            if key >= keep and key not in self._programmes:
+                self._programmes[key] = [dict(w) for w in schedule.get(DAYS[day.weekday()]) or []]
+                added = True
+        old = [key for key in self._programmes if key < keep]
+        for key in old:
+            del self._programmes[key]
+        if added or old:
+            self._save_boosts()
 
     async def _import_statistics(self, days: list[dict]) -> None:
         await self._load_boosts()
+        self._snapshot_programmes(days)
         schedule = (self._schedule or {}).get("days")
-        key = (days, schedule, [list(b) for b in self._boosts])
+        boosts = [list(b) for b in self._boosts]
+        snapshots = {k: [dict(w) for w in v] for k, v in self._programmes.items()}
+        key = (days, schedule, boosts, snapshots)
         if key == self._imported:
             return
         try:
             await async_import_daily_energy(
-                self.hass, self._mac, days, schedule, self._boosts, time.time()
+                self.hass, self._mac, days, schedule, boosts, time.time(), snapshots
             )
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("secure_e7 energy statistics import failed: %r", err)

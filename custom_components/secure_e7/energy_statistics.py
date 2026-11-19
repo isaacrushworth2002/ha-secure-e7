@@ -49,6 +49,7 @@ async def async_import_daily_energy(
     schedule: dict | None = None,
     boosts: list[list] | None = None,
     now: float = 0.0,
+    snapshots: dict | None = None,
 ) -> None:
     if not days:
         return
@@ -63,7 +64,7 @@ async def async_import_daily_energy(
 
     for suffix, name, key in SERIES:
         stat_id = statistic_id(mac, suffix)
-        first = daily_statistics(days, key, tz=tz, schedule=schedule, boosts=boosts, now=now)
+        first = daily_statistics(days, key, tz=tz, schedule=schedule, boosts=boosts, now=now, snapshots=snapshots)
         if not first:
             continue
         first_start = first[0]["start"]
@@ -71,7 +72,7 @@ async def async_import_daily_energy(
         base = (earlier or [{}])[-1].get("sum") or 0.0
         later = await recorded(stat_id, first_start, None)
         rows = carry_stale_hours(
-            daily_statistics(days, key, base, tz, schedule, boosts, now),
+            daily_statistics(days, key, base, tz, schedule, boosts, now, snapshots),
             base,
             [dt_util.utc_from_timestamp(row["start"]) for row in later],
         )
