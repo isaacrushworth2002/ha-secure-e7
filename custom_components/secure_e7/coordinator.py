@@ -29,7 +29,7 @@ from .const import (
     CENTI_AH_TO_KWH,
     CH_HOTWATER_STATE,
     CH_MODE,
-    CH_SCHEDULE_ENABLE,
+    CH_TIMED_BOOST,
     CONNECT_MAX_ATTEMPTS,
     CONSUMPTION_EVERY_N_POLLS,
     DEFAULT_HW_BOI,
@@ -500,15 +500,14 @@ class SecureE7Coordinator(DataUpdateCoordinator):
     def _with_schedule(self, state: dict) -> dict:
         """Add the programme and the next change worked out from it.
 
-        The device's own "next change" counts the zero-length spare windows
-        (and object 2 is unused), so it is not used once a programme is read.
+        This is the off-peak programme (object 1). The Timed Boost switch gates the
+        boost programme, so it has no say here. The device's own "next change"
+        counts the zero-length spare windows, so it is not used once a programme is read.
         """
         state["schedule"] = self._schedule
         if self._schedule is not None:
-            nxt = None
-            if state.get("schedule_enabled") is not False:
-                now = dt_util.now()
-                nxt = next_change(self._schedule["days"], now.weekday(), now.hour * 60 + now.minute)
+            now = dt_util.now()
+            nxt = next_change(self._schedule["days"], now.weekday(), now.hour * 60 + now.minute)
             state["next_change_time"], state["next_change_state"] = nxt or (None, None)
         return state
 
@@ -590,13 +589,13 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             {"mode": MODE_HOME if on else MODE_OFF},
         )
 
-    async def async_set_schedule_enabled(self, enabled: bool) -> None:
+    async def async_set_timed_boost(self, enabled: bool) -> None:
         boi = await self._hw_channel()
         await self._write(
             SI_HOTWATER,
             boi,
-            {"I": CH_SCHEDULE_ENABLE, "V": 1 if enabled else 0},
-            {"schedule_enabled": enabled},
+            {"I": CH_TIMED_BOOST, "V": 1 if enabled else 0},
+            {"timed_boost": enabled},
         )
 
     async def async_shutdown(self) -> None:

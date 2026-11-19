@@ -9,7 +9,7 @@ Handy if you're on Economy 7 or a flexible tariff and want to heat water in the 
 ## What you get
 
 - Hot water on/off, and boost with a choice of 30, 60 or 120 minutes
-- A switch for whether the unit follows its own weekly schedule
+- A Timed Boost switch for the unit's boost programme (it does not stop the off-peak run)
 - The weekly schedule itself, which you can read and change from Home Assistant
 - Current mode, boost time left, and when the next scheduled change is
 - Daily energy use from the unit's own meter, split into boost and off-peak, imported as long-term statistics so each day is booked to its own date

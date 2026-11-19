@@ -1,4 +1,4 @@
-"""Switches: hot-water boost, master power, follow-schedule."""
+"""Switches: hot-water boost, master power, timed boost."""
 from __future__ import annotations
 
 from homeassistant.components.switch import SwitchEntity
@@ -15,7 +15,7 @@ async def async_setup_entry(hass, entry, async_add_entities: AddEntitiesCallback
         [
             HotWaterBoostSwitch(coordinator),
             PowerSwitch(coordinator),
-            ScheduleSwitch(coordinator),
+            TimedBoostSwitch(coordinator),
         ]
     )
 
@@ -55,19 +55,22 @@ class PowerSwitch(SecureE7Entity, SwitchEntity):
         await self.coordinator.async_set_power(False)
 
 
-class ScheduleSwitch(SecureE7Entity, SwitchEntity):
-    _attr_icon = "mdi:calendar-clock"
+class TimedBoostSwitch(SecureE7Entity, SwitchEntity):
+    """The app's Timed Boost enable. It gates the boost programme (object 2, empty
+    by default) and does not stop the off-peak run that the schedule sets."""
+
+    _attr_icon = "mdi:timer-play-outline"
     _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator) -> None:
-        super().__init__(coordinator, "follow_schedule", "Follow Schedule")
+        super().__init__(coordinator, "timed_boost", "Timed Boost")
 
     @property
     def is_on(self) -> bool | None:
-        return (self.coordinator.data or {}).get("schedule_enabled")
+        return (self.coordinator.data or {}).get("timed_boost")
 
     async def async_turn_on(self, **kwargs) -> None:
-        await self.coordinator.async_set_schedule_enabled(True)
+        await self.coordinator.async_set_timed_boost(True)
 
     async def async_turn_off(self, **kwargs) -> None:
-        await self.coordinator.async_set_schedule_enabled(False)
+        await self.coordinator.async_set_timed_boost(False)

@@ -10,9 +10,10 @@ import voluptuous as vol
 
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntryState
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
@@ -30,6 +31,7 @@ from .const import (
     SERVICE_SET_SCHEDULE,
 )
 from .coordinator import SecureE7ConfigEntry, SecureE7Coordinator
+from .migration import renamed_unique_id
 from .schedule import DAYS, encode_days
 
 PLATFORMS_T = [Platform(p) for p in PLATFORMS]
@@ -108,6 +110,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
+@callback
+def _migrate_entity(entity_entry: er.RegistryEntry) -> dict | None:
+    new = renamed_unique_id(entity_entry.unique_id)
+    return {"new_unique_id": new} if new else None
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: SecureE7ConfigEntry) -> bool:
     data = entry.data
     coordinator = SecureE7Coordinator(
@@ -121,6 +129,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SecureE7ConfigEntry) -> 
     )
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
+    await er.async_migrate_entries(hass, entry.entry_id, _migrate_entity)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS_T)
     return True
 

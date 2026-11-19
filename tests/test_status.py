@@ -14,7 +14,7 @@ def reply(hot_water=True, mode=True, schedule=True, boost=None):
             char.update(OT=const.OT_ADVANCE, D=boost)
         hw_chars.append(char)
     if schedule:
-        hw_chars.append({"I": const.CH_SCHEDULE_ENABLE, "V": 1})
+        hw_chars.append({"I": const.CH_TIMED_BOOST, "V": 1})
     hw_chars.append({"I": const.CH_NEXT_PERIOD, "V": 390})
     hw_chars.append({"I": const.CH_NEXT_SETPOINT, "V": 0})
     channels = [{"SI": const.SI_HOTWATER, "I": 2, "V": hw_chars}]
@@ -28,7 +28,7 @@ def test_full_reply_parses():
     assert boi == 2
     assert state["hot_water_on"] is True
     assert state["mode"] == 2
-    assert state["schedule_enabled"] is True
+    assert state["timed_boost"] is True
     assert state["boost_minutes_remaining"] == 30
     assert state["next_change_time"] == "06:30"
     assert state["next_change_state"] == "off"
@@ -54,7 +54,7 @@ def test_missing_mode_and_schedule_are_taken_from_the_last_state():
     state, _ = status.parse_status(reply(mode=False, schedule=False))
     status.complete_status(state, last)
     assert state["mode"] == 2
-    assert state["schedule_enabled"] is True
+    assert state["timed_boost"] is True
 
 
 def test_missing_mode_with_nothing_to_reuse_is_an_error():
@@ -68,3 +68,9 @@ def test_garbage_reply_is_an_error():
     assert boi is None
     with pytest.raises(status.IncompleteStatus):
         status.complete_status(state, None)
+
+
+def test_missing_timed_boost_is_unknown_not_a_failed_poll():
+    state, _ = status.parse_status(reply(schedule=False))
+    assert state["timed_boost"] is None
+    assert status.complete_status(state, None) is state

@@ -23,7 +23,7 @@ CH_HOTWATER_STATE = 4
 CH_MODE = 6
 CH_NEXT_PERIOD = 9       # ScheduleNextPeriod: clock time of next change, minutes past midnight
 CH_NEXT_SETPOINT = 10    # ScheduleNextSetPoint: 1 = next period On, 0 = Off
-CH_SCHEDULE_ENABLE = 27
+CH_TIMED_BOOST = 27       # Timed Boost enable: gates the boost programme (object 2), not the off-peak one
 
 # Sentinel meaning "no next scheduled period" (Constants.MAX_TIME, 0xFFFF)
 MAX_TIME = 65535

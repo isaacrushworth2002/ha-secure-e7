@@ -6,16 +6,16 @@ from .const import (
     CH_MODE,
     CH_NEXT_PERIOD,
     CH_NEXT_SETPOINT,
-    CH_SCHEDULE_ENABLE,
+    CH_TIMED_BOOST,
     MAX_TIME,
     OT_ADVANCE,
     SI_HOTWATER,
 )
 
 # A poll that cannot give these is a failed poll, not an unknown state.
-REQUIRED = ("hot_water_on", "mode", "schedule_enabled")
+REQUIRED = ("hot_water_on", "mode")
 # Read from other channels, so a reply that leaves them out can reuse the last value.
-CARRIED = ("mode", "schedule_enabled")
+CARRIED = ("mode", "timed_boost")
 
 
 class IncompleteStatus(ValueError):
@@ -30,7 +30,7 @@ def parse_status(obj: dict) -> tuple[dict, int | None]:
     state: dict = {
         "hot_water_on": None,
         "mode": None,
-        "schedule_enabled": None,
+        "timed_boost": None,
         "boost_minutes_remaining": None,
         "next_change_time": None,
         "next_change_state": None,
@@ -45,9 +45,9 @@ def parse_status(obj: dict) -> tuple[dict, int | None]:
                 state["hot_water_on"] = bool(hw.get("V"))
                 if hw.get("OT") == OT_ADVANCE and hw.get("D"):
                     state["boost_minutes_remaining"] = hw.get("D")
-            sch = chars.get(CH_SCHEDULE_ENABLE)
+            sch = chars.get(CH_TIMED_BOOST)
             if sch is not None:
-                state["schedule_enabled"] = bool(sch.get("V"))
+                state["timed_boost"] = bool(sch.get("V"))
             nxt = chars.get(CH_NEXT_PERIOD)
             if nxt is not None:
                 v = nxt.get("V")
@@ -62,7 +62,7 @@ def parse_status(obj: dict) -> tuple[dict, int | None]:
 
 
 def complete_status(state: dict, last: dict | None) -> dict:
-    """Fill mode and schedule_enabled from the last state; raise if any required value is missing."""
+    """Fill mode and timed_boost from the last state; raise if any required value is missing."""
     for key in CARRIED:
         if state[key] is None and last and last.get(key) is not None:
             state[key] = last[key]
