@@ -12,7 +12,7 @@ Handy if you're on Economy 7 or a flexible tariff and want to heat water in the 
 - A Timed Boost switch for the unit's boost programme (it does not stop the off-peak run)
 - The weekly schedule itself, which you can read and change from Home Assistant
 - Current mode, boost time left, and when the next scheduled change is
-- Daily energy use from the unit's own meter, split into boost and off-peak, imported as long-term statistics so each day is booked to its own date
+- Daily energy use and hours from the unit's own meter, split into boost and off-peak, with the scheduled hours alongside the actual ones. Energy is imported as long-term statistics so each day is booked to its own date
 
 ## What you need
 
@@ -36,9 +36,26 @@ Or copy `custom_components/secure_e7` into your `config/custom_components/` fold
 
 That's it: the heater shows up as one device with all its controls. If you already know your unit's key, choose **I already have my key** instead and paste it.
 
+## What each control does
+
+The unit keeps two programmes. The off-peak programme is the daily window that heats the cylinder (for example 02:15 to 06:00). The boost programme is a second, separate timer, empty by default.
+
+| Control | What it does |
+| --- | --- |
+| Hot Water switch | Starts a boost of the chosen length, or cancels it |
+| Boost Duration | How long the Hot Water switch boosts for (30, 60 or 120 minutes) |
+| Power switch | Home or off for the whole unit |
+| Timed Boost switch | Turns the boost programme on or off. It does not stop the off-peak run, so switching it off will not stop the heater at 02:15 |
+| Schedule sensor and `set_schedule` | Read and write the off-peak programme |
+| Next Change Time and State | The next on or off edge of the off-peak programme, from the schedule read, in the unit's local time |
+| Heating | Whether the element is on now |
+| Estimated Power | The rated power while the element is on, or 0. The unit reports no live power, voltage or current |
+| Energy and Hours sensors | The newest metered day. Their `date` attribute says which day |
+| Scheduled Hours sensors | Diagnostic: hours the unit scheduled that day, for comparison with the actual hours |
+
 ## Changing the schedule
 
-The schedule shows up as a sensor (today's on times, with the whole week in its attributes) and is re-read every 30 minutes, so changes made on the unit appear too.
+This is the off-peak programme. The schedule shows up as a sensor (today's on times, with the whole week in its attributes) and is re-read every 30 minutes, so changes made on the unit appear too.
 
 To change it, call the `secure_e7.set_schedule` action with the days you want to change. Days you leave out stay as they are.
 
@@ -50,7 +67,7 @@ data:
   sunday: []
 ```
 
-An empty list means off all day. The unit allows up to 3 on-times a day, in 15-minute steps. Keep the quotes around `"on"` and `"off"`, or YAML turns them into true and false. After writing, the schedule is read back from the unit, and you get an error if it doesn't match.
+An empty list means off all day. The unit allows up to 3 on-times a day, in 15-minute steps, and the latest off time you can set is 23:45. Keep the quotes around `"on"` and `"off"`, or YAML turns them into true and false. After writing, the schedule is read back from the unit, and you get an error if it doesn't match.
 
 ## If it goes unavailable
 
@@ -61,7 +78,8 @@ If it stays unavailable for a long time, check your Bluetooth proxy. If the prox
 ## Notes
 
 - To use the energy in the Energy dashboard, add the statistic "Secure E7 Energy" (not the Energy Today sensor) as an individual device. The unit only meters whole days, so each day's kWh shows in the first hour (00:00 UTC) of that day.
-- Energy figures come from the unit's own meter and are converted at a nominal 230 V, the same way the Secure app does it.
+- Energy figures come from the unit's own meter, which counts amp-hours. They are converted at a fixed 230 V, the same way the Secure app does it. A real supply varies a little either side of that, so treat the kWh as close rather than exact.
+- If you used the old Follow Schedule switch, it is now the Timed Boost switch. It keeps its entity id (`switch.immersion_follow_schedule` on an existing install), so automations carry on working, but they now control the boost programme only.
 - Only tested on one unit (an E7+ two-channel, HardwareType 65). Other versions may behave differently. If yours doesn't work, please open an issue.
 - Not affiliated with or endorsed by Secure Controls or Horstmann. Use at your own risk.
 

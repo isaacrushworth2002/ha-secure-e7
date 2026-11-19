@@ -35,18 +35,22 @@ MAX_TIME = 65535
 # accumulated charge in centi-amp-hours split into boost vs off-peak, which the
 # app turns into kWh with a fixed nominal 230 V (no voltage is read on this
 # path). So energy here is metered amp-hours x nominal 230 V, not a guess.
+# 1 centi-Ah = 0.01 Ah, and Ah x V = Wh, so kWh = centi-Ah x V / 100000. The
+# element is resistive, so real energy scales with the actual supply voltage:
+# a UK supply is allowed 216 to 253 V, so figures can read a few per cent off.
+# The value is kept equal to the app's so the two agree; there is no option.
 SI_DYNAMIC_TARIFF = 36   # ServiceHeaderDTO.ServiceType.DynamicTariff
 HI_GET_CONSUMPTION = 9   # HandlerIdDynamicTariffManagement.getConsumptionState
 NOMINAL_VOLTAGE = 230.0
 CENTI_AH_TO_KWH = NOMINAL_VOLTAGE / 100000.0   # multiply raw BP/OP by this
 
-# DynamicDaySchedule @SerializedName field keys (one row == one UTC day)
+# DynamicDaySchedule @SerializedName field keys (one row == one day, stamped at UTC midnight)
 K_TIME = "T"              # unix seconds; 0 = empty bucket
 K_OFFPEAK_CHARGE = "OP"   # centi-amp-hours off-peak
 K_BOOST_CHARGE = "BP"     # centi-amp-hours during boost
-K_OFFPEAK_SCHED_MIN = "OS"
+K_OFFPEAK_SCHED_MIN = "OS"   # minutes the programme scheduled
 K_BOOST_SCHED_MIN = "BS"
-K_OFFPEAK_ACTUAL_MIN = "OA"
+K_OFFPEAK_ACTUAL_MIN = "OA"  # minutes the element actually ran
 K_BOOST_ACTUAL_MIN = "BA"
 K_DTO_DAYS = "D"
 K_DTO_ID = "I"
@@ -55,7 +59,9 @@ K_DTO_ID = "I"
 # Read and write verified against a real unit and its console on 2026-10-18.
 # set_schedule still reads back after writing and fails loudly on mismatch.
 SI_SCHEDULE = 17         # ServiceType for the weekly programme
-SCHEDULE_OBJECT_ID = 1   # object 1 holds the console programme (object 2 is all zeros)
+SCHEDULE_OBJECT_ID = 1   # off-peak programme, the daily window that heats the cylinder
+# Object 2 is the boost programme (Timed Boost, factory default empty), object 3
+# is unused (all 65535/255) and object 0 returns an error.
 HI_GET_SCHEDULE = 22     # read handler (verified)
 HI_SET_SCHEDULE = 21     # write handler (verified)
 SERVICE_GET_SCHEDULE = "get_schedule"
