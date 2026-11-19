@@ -61,11 +61,14 @@ CONFIG_SCHEMA = vol.Schema(
 
 
 def _coordinators(hass: HomeAssistant) -> list[SecureE7Coordinator]:
-    return [
+    coordinators = [
         entry.runtime_data
         for entry in hass.config_entries.async_entries(DOMAIN)
         if entry.state is ConfigEntryState.LOADED
     ]
+    if not coordinators:
+        raise ServiceValidationError("No Secure E7 heater is set up and loaded")
+    return coordinators
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
