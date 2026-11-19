@@ -3,18 +3,18 @@ from __future__ import annotations
 
 MAX_STALE_FAILURES = 3
 MAX_STALE_SECONDS = 300
-# Failed authentications in a row, each already on a fresh connection, before
-# the key is treated as wrong. One is enough if the heater has never answered.
-AUTH_FAILURES_BEFORE_REAUTH = 2
+# Handshakes in a row that were well formed but wrong, each already on a fresh
+# connection, before the key is treated as wrong.
+AUTH_FAILURES_BEFORE_REAUTH = 3
 
 
 class PollHealth:
     """Counts failed polls in a row and remembers when one last worked."""
 
-    def __init__(self) -> None:
+    def __init__(self, auth_failures: int = 0) -> None:
         self.failures = 0
         self.last_success: float | None = None
-        self.auth_failures = 0
+        self.auth_failures = auth_failures
 
     def success(self, now: float) -> int:
         """Record a good poll and return how many failed before it."""
@@ -34,8 +34,7 @@ class PollHealth:
 
     @property
     def reauth_needed(self) -> bool:
-        limit = 1 if self.last_success is None else AUTH_FAILURES_BEFORE_REAUTH
-        return self.auth_failures >= limit
+        return self.auth_failures >= AUTH_FAILURES_BEFORE_REAUTH
 
 
 async def with_retries(call, retries, retry_on, give_up_on=()):

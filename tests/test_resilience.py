@@ -34,19 +34,28 @@ def test_stale_data_is_dropped_after_five_minutes():
     assert h.failure(301) is False
 
 
-def test_one_auth_failure_is_enough_before_the_first_success():
+def test_three_auth_failures_in_a_row_are_needed_even_before_the_first_success():
     h = PollHealth()
-    assert h.reauth_needed is False
-    h.failure(10, auth=True)
+    for t in (10, 20):
+        h.failure(t, auth=True)
+        assert h.reauth_needed is False
+    h.failure(30, auth=True)
     assert h.reauth_needed is True
 
 
-def test_two_auth_failures_in_a_row_are_needed_after_a_success():
+def test_three_auth_failures_in_a_row_are_needed_after_a_success():
     h = PollHealth()
     h.success(0)
-    h.failure(60, auth=True)
-    assert h.reauth_needed is False
-    h.failure(120, auth=True)
+    for t in (60, 120):
+        h.failure(t, auth=True)
+        assert h.reauth_needed is False
+    h.failure(180, auth=True)
+    assert h.reauth_needed is True
+
+
+def test_the_auth_count_can_carry_over_from_an_earlier_attempt():
+    h = PollHealth(auth_failures=2)
+    h.failure(10, auth=True)
     assert h.reauth_needed is True
 
 

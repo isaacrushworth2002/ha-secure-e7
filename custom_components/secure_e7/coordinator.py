@@ -121,7 +121,9 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._energy_wh = 0.0  # estimated, integrated while the element is on
         self._last_energy_ts: float | None = None
         self._poll_count = 0
-        self._health = PollHealth()
+        # Survives a reload, so failed handshakes at setup add up across retries.
+        self._auth_counts: dict = hass.data.setdefault(DOMAIN, {}).setdefault("auth_failures", {})
+        self._health = PollHealth(self._auth_counts.get(entry.entry_id, 0))
         self.last_success = None  # datetime of the last good poll
         self._poll_seconds = SCAN_INTERVAL_SECONDS
         self._consumption: list[dict] = []  # cached daily metered history
@@ -181,9 +183,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             TX_UUID, lambda _c, data: self._rx.feed(bytes(data))
         )
         await asyncio.sleep(0.5)
-        if not await self._four_pass():
-            await self._disconnect()
-            raise AuthFailed("Authentication (four-pass) failed")
+        await self._four_pass()
 
     def _on_disconnected(self, client) -> None:
         """The proxy dropped the link: forget the client so the next call reconnects."""
@@ -238,20 +238,25 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             raise UpdateFailed("Timed out waiting for device reply") from err
         return self._rx.assembled()
 
-    async def _four_pass(self) -> bool:
+    async def _four_pass(self) -> None:
+        """Authenticate, raising AuthFailed only for a well-formed wrong answer.
+
+        A short, odd or undecryptable frame is a bad connection, not a bad key.
+        """
         r_app = secrets.token_bytes(16)
         f = unframe(await self._txrx(frame_raw(bytes([1, 0, 16, 0]) + r_app)))
-        if len(f) < 4 or f[0] != 2:
-            return False
-        r_dev = f[4 : 4 + f[2]]
+        if len(f) < 20 or f[0] != 2 or f[2] != 16:
+            raise UpdateFailed("Malformed handshake reply")
+        r_dev = f[4:20]
         f = unframe(
             await self._txrx(
                 frame_raw(bytes([3, 0, 16, 0]) + aes_encrypt(self._key, r_dev))
             )
         )
-        if len(f) < 4 or f[0] != 4:
-            return False
-        return aes_decrypt(self._key, f[4 : 4 + f[2]])[:16] == r_app
+        if len(f) < 20 or f[0] != 4 or f[2] != 16:
+            raise UpdateFailed("Malformed handshake reply")
+        if aes_decrypt(self._key, f[4:20]) != r_app:
+            raise AuthFailed("The heater did not accept the key")
 
     async def _request_text(self, hi: int, si: int, args=None) -> str:
         """Send one encrypted request and return the decrypted reply text."""
@@ -273,10 +278,12 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             state = await with_retries(
                 self._poll_once, POLL_RETRIES, UpdateFailed, DeviceUnreachable
             )
-        except UpdateFailed as err:
+        except HomeAssistantError as err:
             keep = self._health.failure(time.monotonic(), isinstance(err, AuthFailed))
+            self._auth_counts[self.config_entry.entry_id] = self._health.auth_failures
             self._set_poll_interval()
             if self._health.reauth_needed:
+                self._auth_counts.pop(self.config_entry.entry_id, None)
                 raise ConfigEntryAuthFailed(str(err)) from err
             if keep and self.data is not None:
                 _LOGGER.debug(
@@ -286,8 +293,11 @@ class SecureE7Coordinator(DataUpdateCoordinator):
                     err,
                 )
                 return self.data
+            if not isinstance(err, UpdateFailed):
+                raise UpdateFailed(str(err)) from err
             raise
         missed = self._health.success(time.monotonic())
+        self._auth_counts.pop(self.config_entry.entry_id, None)
         self.last_success = dt_util.utcnow()
         if missed:
             _LOGGER.info("secure_e7 %s back after %d failed polls", self._mac, missed)
