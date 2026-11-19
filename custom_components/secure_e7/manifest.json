@@ -2,7 +2,8 @@
   "domain": "secure_e7",
   "name": "Secure / Horstmann E7+ Immersion",
   "after_dependencies": [
-    "esphome"
+    "esphome",
+    "recorder"
   ],
   "bluetooth": [
     {
