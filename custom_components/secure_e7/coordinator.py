@@ -19,8 +19,9 @@ from datetime import timedelta
 from bleak_retry_connector import establish_connection
 
 from homeassistant.components import bluetooth
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -121,8 +122,15 @@ def parse_consumption(obj: dict) -> list[dict]:
     return days
 
 
+SecureE7ConfigEntry = ConfigEntry["SecureE7Coordinator"]
+
+
 class DeviceUnreachable(UpdateFailed):
     """No adapter or proxy can see the heater, so trying again at once will not help."""
+
+
+class AuthFailed(UpdateFailed):
+    """The heater did not accept the key."""
 
 
 class SecureE7Coordinator(DataUpdateCoordinator):
@@ -131,6 +139,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
     def __init__(
         self,
         hass: HomeAssistant,
+        entry: ConfigEntry,
         mac: str,
         key: bytes,
         gmi: str,
@@ -140,6 +149,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=SCAN_INTERVAL_SECONDS),
         )
@@ -218,7 +228,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         await asyncio.sleep(0.5)
         if not await self._four_pass():
             await self._disconnect()
-            raise UpdateFailed("Authentication (four-pass) failed")
+            raise AuthFailed("Authentication (four-pass) failed")
 
     def _on_disconnected(self, client) -> None:
         """The proxy dropped the link: forget the client so the next call reconnects."""
@@ -309,8 +319,10 @@ class SecureE7Coordinator(DataUpdateCoordinator):
                 self._poll_once, POLL_RETRIES, UpdateFailed, DeviceUnreachable
             )
         except UpdateFailed as err:
-            keep = self._health.failure(time.monotonic())
+            keep = self._health.failure(time.monotonic(), isinstance(err, AuthFailed))
             self._set_poll_interval()
+            if self._health.reauth_needed:
+                raise ConfigEntryAuthFailed(str(err)) from err
             if keep and self.data is not None:
                 _LOGGER.debug(
                     "secure_e7 %s poll %d failed, keeping last state: %s",

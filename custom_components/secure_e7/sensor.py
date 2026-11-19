@@ -19,13 +19,13 @@ from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower, UnitO
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, MODE_NAMES
+from .const import MODE_NAMES
 from .schedule import DAYS
 from .entity import SecureE7Entity
 
 
 async def async_setup_entry(hass, entry, async_add_entities: AddEntitiesCallback) -> None:
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     async_add_entities(
         [
             ModeSensor(coordinator),

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import voluptuous as vol
 
-from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
@@ -29,7 +29,7 @@ from .const import (
     SERVICE_GET_SCHEDULE,
     SERVICE_SET_SCHEDULE,
 )
-from .coordinator import SecureE7Coordinator
+from .coordinator import SecureE7ConfigEntry, SecureE7Coordinator
 from .schedule import DAYS, encode_days
 
 PLATFORMS_T = [Platform(p) for p in PLATFORMS]
@@ -54,10 +54,18 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 
+def _coordinators(hass: HomeAssistant) -> list[SecureE7Coordinator]:
+    return [
+        entry.runtime_data
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.state is ConfigEntryState.LOADED
+    ]
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async def get_schedule(call: ServiceCall) -> ServiceResponse:
         """Re-read the weekly programme from every configured heater."""
-        coordinators = hass.data.get(DOMAIN, {}).values()
+        coordinators = _coordinators(hass)
         object_id = call.data.get("object_id")
         return {c._mac: await c.async_get_schedule(object_id) for c in coordinators}
 
@@ -78,7 +86,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             encode_days(changes)  # fail on bad windows before touching any heater
         except ValueError as err:
             raise ServiceValidationError(str(err)) from err
-        coordinators = hass.data.get(DOMAIN, {}).values()
+        coordinators = _coordinators(hass)
         return {c._mac: await c.async_set_schedule(changes) for c in coordinators}
 
     window = vol.Schema({vol.Required("on"): cv.string, vol.Required("off"): cv.string})
@@ -100,26 +108,25 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: SecureE7ConfigEntry) -> bool:
     data = entry.data
     coordinator = SecureE7Coordinator(
         hass,
+        entry,
         mac=data[CONF_MAC],
         key=bytes.fromhex(data[CONF_KEY]),
         gmi=str(data[CONF_GMI]),
         boost_minutes=data.get(CONF_BOOST_MINUTES, DEFAULT_BOOST_MINUTES),
         rating_watts=data.get(CONF_RATING_WATTS, DEFAULT_RATING_WATTS),
     )
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
-    await coordinator.async_refresh()
+    await coordinator.async_config_entry_first_refresh()
+    entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS_T)
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: SecureE7ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS_T)
     if unload_ok:
-        coordinator = hass.data[DOMAIN].pop(entry.entry_id, None)
-        if coordinator is not None:
-            await coordinator.async_shutdown()
+        await entry.runtime_data.async_shutdown()
     return unload_ok

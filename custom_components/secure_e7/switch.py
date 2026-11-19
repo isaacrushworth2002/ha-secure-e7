@@ -5,12 +5,12 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, MODE_HOME
+from .const import MODE_HOME
 from .entity import SecureE7Entity
 
 
 async def async_setup_entry(hass, entry, async_add_entities: AddEntitiesCallback) -> None:
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     async_add_entities(
         [
             HotWaterBoostSwitch(coordinator),

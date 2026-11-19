@@ -5,12 +5,12 @@ from homeassistant.components.select import SelectEntity
 from homeassistant.const import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import ALLOWED_BOOST_MINUTES, DOMAIN
+from .const import ALLOWED_BOOST_MINUTES
 from .entity import SecureE7Entity
 
 
 async def async_setup_entry(hass, entry, async_add_entities: AddEntitiesCallback) -> None:
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     async_add_entities([BoostDurationSelect(coordinator)])
 
 

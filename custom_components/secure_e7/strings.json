@@ -37,7 +37,8 @@
       "unknown": "Something went wrong. Check the Home Assistant logs and try again."
     },
     "abort": {
-      "already_configured": "This immersion heater is already set up."
+      "already_configured": "This immersion heater is already set up.",
+      "reauth_successful": "The new key was saved. The heater is reconnecting."
     }
   },
   "services": {

@@ -14,7 +14,7 @@ import logging
 import voluptuous as vol
 
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
-from homeassistant.config_entries import ConfigFlow
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigFlow
 from homeassistant.helpers import config_validation as cv
 
 from .commission import CommissionError, async_commission, mac_to_gmi
@@ -52,6 +52,10 @@ class SecureE7ConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({vol.Required(CONF_MAC): cv.string}),
         )
 
+    async def async_step_reauth(self, entry_data):
+        self._address = str(entry_data[CONF_MAC]).upper()
+        return await self.async_step_method()
+
     async def async_step_import(self, data: dict):
         await self.async_set_unique_id(str(data[CONF_MAC]).upper())
         self._abort_if_unique_id_configured()
@@ -75,9 +79,7 @@ class SecureE7ConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("secure_e7 commissioning failed")
                 errors["base"] = "unknown"
             else:
-                return self.async_create_entry(
-                    title=TITLE, data=self._entry_data(key_hex)
-                )
+                return self._finish(key_hex)
         return self.async_show_form(
             step_id="commission",
             data_schema=vol.Schema({}),
@@ -90,15 +92,20 @@ class SecureE7ConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             key = str(user_input[CONF_KEY]).strip().lower()
             if len(key) == 32 and set(key) <= _KEY_CHARS:
-                return self.async_create_entry(
-                    title=TITLE, data=self._entry_data(key)
-                )
+                return self._finish(key)
             errors["base"] = "bad_key"
         return self.async_show_form(
             step_id="manual",
             data_schema=vol.Schema({vol.Required(CONF_KEY): cv.string}),
             errors=errors,
         )
+
+    def _finish(self, key_hex: str):
+        if self.source == SOURCE_REAUTH:
+            return self.async_update_reload_and_abort(
+                self._get_reauth_entry(), data_updates={CONF_KEY: key_hex}
+            )
+        return self.async_create_entry(title=TITLE, data=self._entry_data(key_hex))
 
     def _entry_data(self, key_hex: str) -> dict:
         assert self._address is not None

@@ -34,6 +34,33 @@ def test_stale_data_is_dropped_after_five_minutes():
     assert h.failure(301) is False
 
 
+def test_one_auth_failure_is_enough_before_the_first_success():
+    h = PollHealth()
+    assert h.reauth_needed is False
+    h.failure(10, auth=True)
+    assert h.reauth_needed is True
+
+
+def test_two_auth_failures_in_a_row_are_needed_after_a_success():
+    h = PollHealth()
+    h.success(0)
+    h.failure(60, auth=True)
+    assert h.reauth_needed is False
+    h.failure(120, auth=True)
+    assert h.reauth_needed is True
+
+
+def test_another_kind_of_failure_or_a_success_clears_the_auth_count():
+    h = PollHealth()
+    h.success(0)
+    h.failure(60, auth=True)
+    h.failure(120)
+    h.failure(180, auth=True)
+    assert h.reauth_needed is False
+    h.success(240)
+    assert h.auth_failures == 0
+
+
 class Transient(Exception):
     pass
 
