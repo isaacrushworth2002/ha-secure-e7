@@ -556,7 +556,9 @@ class SecureE7Coordinator(DataUpdateCoordinator):
 
         async def send() -> None:
             async with self._session():
-                await self._request(HI_WRITE, si, [boi, char])
+                reply = await self._request(HI_WRITE, si, [boi, char])
+            if isinstance(reply, dict) and reply.get("E") is not None:
+                raise HomeAssistantError(f"The heater refused the write: {reply['E']}")
 
         try:
             await with_retries(send, WRITE_RETRIES, UpdateFailed, DeviceUnreachable)

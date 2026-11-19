@@ -156,3 +156,48 @@ def test_home_assistant_errors_and_cancellation_pass_through_after_disconnecting
 
     asyncio.run(run())
     assert c.events.count("disconnect") == 2 and not c._lock.locked()
+
+
+def write_with_reply(env, reply):
+    c = prepare(env)
+    calls = []
+
+    async def request(hi, si, args=None):
+        calls.append(1)
+        return reply
+
+    c._request = request
+    asyncio.run(c._write(1, 1, {"I": 1}, {"mode": "home"}))
+    return c, calls
+
+
+def test_a_write_the_device_refuses_raises_and_changes_nothing(coordinator_env):
+    with pytest.raises(coordinator_env.exceptions.HomeAssistantError, match="refused"):
+        write_with_reply(coordinator_env, {"E": {"C": 5}})
+
+
+def test_a_refused_write_is_not_retried_or_shown(coordinator_env):
+    c = prepare(coordinator_env)
+    calls = []
+
+    async def request(hi, si, args=None):
+        calls.append(1)
+        return {"E": 1}
+
+    c._request = request
+    c.data = {"mode": "off"}
+    with pytest.raises(coordinator_env.exceptions.HomeAssistantError):
+        asyncio.run(c._write(1, 1, {"I": 1}, {"mode": "home"}))
+    assert len(calls) == 1 and c.data == {"mode": "off"}
+
+
+def test_an_accepted_write_is_shown(coordinator_env):
+    c = prepare(coordinator_env)
+    c.data = {"mode": "off"}
+
+    async def request(hi, si, args=None):
+        return {"R": []}
+
+    c._request = request
+    asyncio.run(c._write(1, 1, {"I": 1}, {"mode": "home"}))
+    assert c.data == {"mode": "home"}
