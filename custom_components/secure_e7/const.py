@@ -110,6 +110,7 @@ MAX_ENERGY_GAP_SECONDS = SCAN_INTERVAL_SECONDS * 5 // 2
 # connection attempts plus the replies that follow.
 CONNECT_MAX_ATTEMPTS = 3
 OPERATION_TIMEOUT_SECONDS = 120
+SLOW_READ_TIMEOUT_SECONDS = 30  # each of the consumption and schedule reads
 DISCONNECT_TIMEOUT_SECONDS = 10
 REPLY_TIMEOUT_SECONDS = 12  # wait for the last chunk of one reply
 WRITE_RETRIES = 2

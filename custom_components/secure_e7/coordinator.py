@@ -54,6 +54,7 @@ from .const import (
     SI_HOTWATER,
     SI_SCHEDULE,
     SI_THERMOSTAT,
+    SLOW_READ_TIMEOUT_SECONDS,
     TX_UUID,
     WRITE_RETRIES,
 )
@@ -132,6 +133,9 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._schedule: dict | None = None
         self._schedule_raw: str | None = None  # parsed weekly programme
         self._slow_task: asyncio.Task | None = None
+        self._consumption_read = False  # the slow reads have worked at least once
+        self._schedule_read = False
+        self._waiting = 0  # callers queued for the session lock
 
     # ---- connection / auth -------------------------------------------------
     async def _ensure_connected(self) -> None:
@@ -208,7 +212,12 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         Any failure drops the connection so the next call starts clean. Errors
         that are not already Home Assistant errors come out as UpdateFailed.
         """
-        async with self._lock:
+        self._waiting += 1
+        try:
+            await self._lock.acquire()
+        finally:
+            self._waiting -= 1
+        try:
             limit = asyncio.timeout(OPERATION_TIMEOUT_SECONDS)
             try:
                 async with limit:
@@ -224,6 +233,8 @@ class SecureE7Coordinator(DataUpdateCoordinator):
                         f"No result from {self._mac} within {OPERATION_TIMEOUT_SECONDS}s"
                     ) from err
                 raise UpdateFailed(f"{type(err).__name__}: {err}") from err
+        finally:
+            self._lock.release()
 
     async def _txrx(self, packets: list[bytes], wait: float = REPLY_TIMEOUT_SECONDS) -> bytes:
         client = self._client
@@ -334,6 +345,14 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         state["estimated_energy_kwh"] = round(self._energy_wh / 1000.0, 3)
         return self._with_cached(state)
 
+    def _publish(self, data: dict) -> None:
+        """Show new data without calling the poll good, which async_set_updated_data would.
+
+        Entities stay unavailable through an outage until a real poll succeeds.
+        """
+        self.data = data
+        self.async_update_listeners()
+
     def _with_cached(self, state: dict) -> dict:
         """Add the slowly read consumption and schedule, as last cached."""
         self._with_schedule(state)
@@ -353,7 +372,10 @@ class SecureE7Coordinator(DataUpdateCoordinator):
 
     def _start_slow_refresh(self) -> None:
         """Read consumption and the schedule after the state is published."""
-        due = self._poll_count % CONSUMPTION_EVERY_N_POLLS == 0
+        due = (
+            self._poll_count % CONSUMPTION_EVERY_N_POLLS == 0
+            or not (self._consumption_read and self._schedule_read)
+        )
         self._poll_count += 1
         if due and (self._slow_task is None or self._slow_task.done()):
             self._slow_task = self.hass.async_create_background_task(
@@ -361,37 +383,54 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             )
 
     async def _refresh_slow(self) -> None:
-        """Failures here are logged and never touch availability."""
+        """Failures here are logged and never touch availability.
+
+        The session is held only for the two reads, each with its own time limit,
+        and they give way to a request that is waiting for the lock.
+        """
         try:
             async with self._session():
-                try:
-                    days = await self._fetch_consumption()
-                    if days:
-                        self._consumption = days
-                        await self._import_statistics(days)
-                        if not self._consumption_logged:
-                            _LOGGER.info("secure_e7 metered consumption (raw): %s", days)
-                            self._consumption_logged = True
-                except UpdateFailed as err:
-                    _LOGGER.debug("consumption fetch skipped: %s", err)
-                # Weekly programme: re-read on the same cadence so console edits
-                # show up; keep the last good read on failure.
-                try:
-                    self._schedule = await self._fetch_schedule() or self._schedule
-                except UpdateFailed as err:
-                    _LOGGER.debug("schedule read skipped: %s", err)
+                await self._read_slow()
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("secure_e7 slow refresh failed: %r", err)
-            return
+        if self._consumption:
+            await self._import_statistics(self._consumption)
         if self.data is not None and self.last_update_success:
-            self.async_set_updated_data(self._with_cached(dict(self.data)))
+            self._publish(self._with_cached(dict(self.data)))
+
+    async def _read_slow(self) -> None:
+        try:
+            async with asyncio.timeout(SLOW_READ_TIMEOUT_SECONDS):
+                days = await self._fetch_consumption()
+            self._consumption_read = True
+            if days:
+                self._consumption = days
+                if not self._consumption_logged:
+                    _LOGGER.info("secure_e7 metered consumption (raw): %s", days)
+                    self._consumption_logged = True
+        except UpdateFailed as err:
+            _LOGGER.debug("consumption fetch skipped: %s", err)
+        if self._waiting:
+            _LOGGER.debug("secure_e7 schedule read left for later, a request is waiting")
+            return
+        # Weekly programme: re-read on the same cadence so console edits
+        # show up; keep the last good read on failure.
+        try:
+            async with asyncio.timeout(SLOW_READ_TIMEOUT_SECONDS):
+                parsed = await self._fetch_schedule()
+            self._schedule_read = True
+            self._schedule = parsed or self._schedule
+        except UpdateFailed as err:
+            _LOGGER.debug("schedule read skipped: %s", err)
 
     async def _fetch_consumption(self) -> list[dict]:
         """Request the DynamicTariff consumption profile for the hot-water channel."""
         obj = await self._request(
             HI_GET_CONSUMPTION, SI_DYNAMIC_TARIFF, [self._hw_boi or DEFAULT_HW_BOI]
         )
-        return [] if obj.get("E") is not None else parse_consumption(obj)
+        if obj.get("E") is not None:
+            raise UpdateFailed(f"Consumption read refused: {obj['E']}")
+        return parse_consumption(obj)
 
     async def _fetch_schedule(self, object_id: int | None = None) -> dict | None:
         """Read the weekly programme (object 1 unless object_id is given).
