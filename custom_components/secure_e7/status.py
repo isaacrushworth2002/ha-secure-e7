@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from .const import (
+    CH_DEVICE_LOCK,
+    CH_DST,
     CH_HOTWATER_STATE,
     CH_MODE,
     CH_NEXT_PERIOD,
@@ -10,6 +12,7 @@ from .const import (
     MAX_TIME,
     OT_ADVANCE,
     SI_HOTWATER,
+    SI_TIMER,
 )
 
 # A poll that cannot give these is a failed poll, not an unknown state.
@@ -34,6 +37,8 @@ def parse_status(obj: dict) -> tuple[dict, int | None]:
         "boost_minutes_remaining": None,
         "next_change_time": None,
         "next_change_state": None,
+        "panel_lock": None,
+        "dst": None,
     }
     for ch in channels:
         si = ch.get("SI")
@@ -56,6 +61,11 @@ def parse_status(obj: dict) -> tuple[dict, int | None]:
             nss = chars.get(CH_NEXT_SETPOINT)
             if nss is not None and nss.get("V") is not None:
                 state["next_change_state"] = "on" if nss.get("V") else "off"
+        if si == SI_TIMER:
+            for key, ch_id in (("panel_lock", CH_DEVICE_LOCK), ("dst", CH_DST)):
+                c = chars.get(ch_id)
+                if c is not None and c.get("V") is not None:
+                    state[key] = bool(c.get("V"))
         if CH_MODE in chars and state["mode"] is None:
             state["mode"] = chars[CH_MODE].get("V")
     return state, hw_boi

@@ -21,6 +21,8 @@ HI_GET_ALL = 3  # GetAllServiceValues (on BBServer)
 # DeviceCharacteristics ("I" inside a CharacteristicDTO)
 CH_HOTWATER_STATE = 4
 CH_MODE = 6
+CH_DST = 28              # DST_EnableDisable: clock follows daylight saving, on the BBServer channel (SI_TIMER)
+CH_DEVICE_LOCK = 30      # DeviceLock: front-panel lock
 CH_NEXT_PERIOD = 9       # ScheduleNextPeriod: clock time of next change, minutes past midnight
 CH_NEXT_SETPOINT = 10    # ScheduleNextSetPoint: 1 = next period On, 0 = Off
 CH_TIMED_BOOST = 27       # Timed Boost enable: gates the boost programme (object 2), not the off-peak one

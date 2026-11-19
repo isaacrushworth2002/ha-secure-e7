@@ -49,6 +49,8 @@ The unit keeps two programmes. The off-peak programme is the daily window that h
 | Schedule sensor and `set_schedule` | Read and write the off-peak programme |
 | Next Change Time and State | The next on or off edge of the off-peak programme, from the schedule read, in the unit's local time |
 | Heating | Whether the element is on now |
+| Panel Lock | Diagnostic: whether the front panel is locked |
+| Daylight Saving | Diagnostic: whether the heater clock follows daylight saving |
 | Estimated Power | The rated power while the element is on, or 0. The unit reports no live power, voltage or current |
 | Energy and Hours sensors | The newest metered day. Their `date` attribute says which day |
 | Scheduled Hours sensors | Diagnostic: hours the unit scheduled that day, for comparison with the actual hours |
