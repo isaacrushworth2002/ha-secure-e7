@@ -8,7 +8,7 @@ device reports energy daily, not instantaneously.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -20,6 +20,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from .const import MODE_NAMES
+from .consumption import row_date
 from .schedule import DAYS
 from .entity import SecureE7Entity
 
@@ -38,6 +39,12 @@ async def async_setup_entry(hass, entry, async_add_entities: AddEntitiesCallback
             EnergyTodaySensor(coordinator, "energy_today_offpeak_kwh", "Energy Today Off-Peak"),
             HoursTodaySensor(coordinator, "hours_today_boost", "Boost Hours Today"),
             HoursTodaySensor(coordinator, "hours_today_offpeak", "Off-Peak Hours Today"),
+            HoursTodaySensor(
+                coordinator, "hours_scheduled_boost", "Boost Hours Scheduled", diagnostic=True
+            ),
+            HoursTodaySensor(
+                coordinator, "hours_scheduled_offpeak", "Off-Peak Hours Scheduled", diagnostic=True
+            ),
             ScheduleSensor(coordinator),
             LastSuccessSensor(coordinator),
         ]
@@ -130,15 +137,15 @@ class EnergyTodaySensor(SecureE7Entity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
+        data = self.coordinator.data or {}
         if not self._is_total:
-            return None
-        days = (self.coordinator.data or {}).get("consumption") or []
+            return {"date": data.get("consumption_date")}
+        days = data.get("consumption") or []
         return {
+            "date": data.get("consumption_date"),
             "history": [
                 {
-                    "date": datetime.fromtimestamp(d["ts"], tz=timezone.utc)
-                    .date()
-                    .isoformat(),
+                    "date": row_date(d["ts"], dt_util.DEFAULT_TIME_ZONE).isoformat(),
                     "total_kwh": d["total_kwh"],
                     "boost_kwh": d["boost_kwh"],
                     "offpeak_kwh": d["offpeak_kwh"],
@@ -149,18 +156,27 @@ class EnergyTodaySensor(SecureE7Entity, SensorEntity):
 
 
 class HoursTodaySensor(SecureE7Entity, SensorEntity):
+    """Hours on the newest metered day: actual, or what the programme scheduled."""
+
     _attr_device_class = SensorDeviceClass.DURATION
     _attr_native_unit_of_measurement = UnitOfTime.HOURS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:timer-outline"
 
-    def __init__(self, coordinator, key: str, name: str) -> None:
+    def __init__(self, coordinator, key: str, name: str, diagnostic: bool = False) -> None:
         super().__init__(coordinator, key, name)
         self._key = key
+        if diagnostic:
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
+            self._attr_state_class = None
 
     @property
     def native_value(self):
         return (self.coordinator.data or {}).get(self._key)
+
+    @property
+    def extra_state_attributes(self):
+        return {"date": (self.coordinator.data or {}).get("consumption_date")}
 
 
 class ScheduleSensor(SecureE7Entity, SensorEntity):

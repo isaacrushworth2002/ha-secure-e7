@@ -26,7 +26,6 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CENTI_AH_TO_KWH,
     CH_HOTWATER_STATE,
     CH_MODE,
     CH_TIMED_BOOST,
@@ -41,13 +40,6 @@ from .const import (
     HI_SET_SCHEDULE,
     SCHEDULE_OBJECT_ID,
     HI_WRITE,
-    K_BOOST_ACTUAL_MIN,
-    K_BOOST_CHARGE,
-    K_DTO_DAYS,
-    K_DTO_ID,
-    K_OFFPEAK_ACTUAL_MIN,
-    K_OFFPEAK_CHARGE,
-    K_TIME,
     MAX_ENERGY_GAP_SECONDS,
     OPERATION_TIMEOUT_SECONDS,
     MODE_HOME,
@@ -66,6 +58,7 @@ from .const import (
     WRITE_RETRIES,
 )
 from .backoff import poll_interval
+from .consumption import latest_row, parse_consumption, row_date
 from .energy import gap_energy_wh
 from .energy_statistics import async_import_daily_energy
 from .resilience import PollHealth, with_retries
@@ -82,44 +75,6 @@ from .status import IncompleteStatus, complete_status, parse_status
 from .schedule import encode_days, next_change, parse_schedule, read_slots, splice
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def parse_consumption(obj: dict) -> list[dict]:
-    """DynamicTariff getConsumptionState reply -> list of per-day dicts.
-
-    R = [ {"I": channelId, "D": [ {"T":unix,"OP":f,"BP":f,"OA":f,"BA":f,...} ] } ]
-    kWh = charge_centi_ah * 230 / 100000 (mirrors ConsumptionProfile.java).
-    """
-    result = obj.get("R")
-    if isinstance(result, dict):
-        result = [result]
-    if not isinstance(result, list):
-        return []
-    days: list[dict] = []
-    for dto in result:
-        if not isinstance(dto, dict):
-            continue
-        for row in dto.get(K_DTO_DAYS, []) or []:
-            t = int(row.get(K_TIME, 0) or 0)
-            if t == 0:
-                continue
-            bp = float(row.get(K_BOOST_CHARGE, 0) or 0)
-            op = float(row.get(K_OFFPEAK_CHARGE, 0) or 0)
-            days.append(
-                {
-                    "channel_id": dto.get(K_DTO_ID),
-                    "ts": t,
-                    "boost_kwh": round(bp * CENTI_AH_TO_KWH, 3),
-                    "offpeak_kwh": round(op * CENTI_AH_TO_KWH, 3),
-                    "total_kwh": round((bp + op) * CENTI_AH_TO_KWH, 3),
-                    "boost_charge_centi_ah": bp,
-                    "offpeak_charge_centi_ah": op,
-                    "boost_actual_h": round(float(row.get(K_BOOST_ACTUAL_MIN, 0) or 0) / 60.0, 3),
-                    "offpeak_actual_h": round(float(row.get(K_OFFPEAK_ACTUAL_MIN, 0) or 0) / 60.0, 3),
-                }
-            )
-    days.sort(key=lambda d: d["ts"])
-    return days
 
 
 SecureE7ConfigEntry = ConfigEntry["SecureE7Coordinator"]
@@ -373,12 +328,17 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         """Add the slowly read consumption and schedule, as last cached."""
         self._with_schedule(state)
         state["consumption"] = self._consumption
-        latest = self._consumption[-1] if self._consumption else {}
+        latest = latest_row(self._consumption)
+        state["consumption_date"] = (
+            row_date(latest["ts"], dt_util.DEFAULT_TIME_ZONE).isoformat() if latest else None
+        )
         state["energy_today_kwh"] = latest.get("total_kwh")
         state["energy_today_boost_kwh"] = latest.get("boost_kwh")
         state["energy_today_offpeak_kwh"] = latest.get("offpeak_kwh")
         state["hours_today_boost"] = latest.get("boost_actual_h")
         state["hours_today_offpeak"] = latest.get("offpeak_actual_h")
+        state["hours_scheduled_boost"] = latest.get("boost_scheduled_h")
+        state["hours_scheduled_offpeak"] = latest.get("offpeak_scheduled_h")
         return state
 
     def _start_slow_refresh(self) -> None:
