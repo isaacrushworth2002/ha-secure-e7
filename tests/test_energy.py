@@ -1,6 +1,11 @@
+from datetime import datetime, timezone
+
 from conftest import load
 
 energy = load("energy")
+
+DAY = 86400
+T0 = 1_700_006_400 - 1_700_006_400 % DAY  # a UTC midnight
 
 
 def test_normal_gap_is_credited():
@@ -19,3 +24,40 @@ def test_outage_gap_is_not_credited():
 def test_gap_at_the_limit_is_credited():
     assert energy.gap_energy_wh(True, 3600, 150, 150) == 150.0
 
+
+def row(day, total, boost=0.0, offpeak=0.0, offset=0):
+    return {"ts": T0 + day * DAY + offset, "total_kwh": total,
+            "boost_kwh": boost, "offpeak_kwh": offpeak}
+
+
+def test_statistics_are_keyed_on_the_row_date_and_cumulative():
+    rows = energy.daily_statistics([row(0, 2.0), row(1, 6.5, offset=3600), row(2, 0.0)], "total_kwh")
+    assert [r["start"] for r in rows] == [
+        datetime.fromtimestamp(T0 + d * DAY, tz=timezone.utc) for d in range(3)
+    ]
+    assert [r["sum"] for r in rows] == [2.0, 8.5, 8.5]
+    assert [r["state"] for r in rows] == [2.0, 8.5, 8.5]
+
+
+def test_late_row_changes_only_its_day_and_later_sums():
+    before = energy.daily_statistics([row(0, 2.0), row(1, 0.0), row(2, 1.0)], "total_kwh")
+    after = energy.daily_statistics([row(0, 2.0), row(1, 6.0), row(2, 1.0)], "total_kwh")
+    assert [r["sum"] for r in before] == [2.0, 2.0, 3.0]
+    assert [r["sum"] for r in after] == [2.0, 8.0, 9.0]
+
+
+def test_base_carries_over_from_earlier_statistics():
+    rows = energy.daily_statistics([row(5, 1.5)], "total_kwh", base=100.0)
+    assert rows[0]["sum"] == 101.5
+
+
+def test_rows_are_unsorted_and_missing_values_are_skipped():
+    days = [row(1, 1.0), row(0, 2.0), {"ts": T0 + 2 * DAY, "total_kwh": None}]
+    rows = energy.daily_statistics(days, "total_kwh")
+    assert [r["sum"] for r in rows] == [2.0, 3.0]
+
+
+def test_each_series_uses_its_own_key():
+    days = [row(0, 3.0, boost=1.0, offpeak=2.0)]
+    assert energy.daily_statistics(days, "boost_kwh")[0]["sum"] == 1.0
+    assert energy.daily_statistics(days, "offpeak_kwh")[0]["sum"] == 2.0

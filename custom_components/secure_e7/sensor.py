@@ -107,11 +107,15 @@ class EstimatedPowerSensor(SecureE7Entity, SensorEntity):
 
 
 class EnergyTodaySensor(SecureE7Entity, SensorEntity):
-    """Latest day's metered kWh. TOTAL with a daily last_reset."""
+    """Latest day's metered kWh, for display only.
+
+    It has no state class on purpose: the device fills its rows in late, so the
+    Energy dashboard would book them to the wrong hour. The per-day statistics
+    (energy_statistics.py) are what the dashboard should use.
+    """
 
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_state_class = SensorStateClass.TOTAL
     _attr_icon = "mdi:lightning-bolt"
 
     def __init__(self, coordinator, key: str, name: str, total: bool = False) -> None:
@@ -122,13 +126,6 @@ class EnergyTodaySensor(SecureE7Entity, SensorEntity):
     @property
     def native_value(self):
         return (self.coordinator.data or {}).get(self._key)
-
-    @property
-    def last_reset(self):
-        days = (self.coordinator.data or {}).get("consumption") or []
-        if not days:
-            return None
-        return datetime.fromtimestamp(days[-1]["ts"], tz=timezone.utc)
 
     @property
     def extra_state_attributes(self):

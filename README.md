@@ -12,7 +12,7 @@ Handy if you're on Economy 7 or a flexible tariff and want to heat water in the 
 - A switch for whether the unit follows its own weekly schedule
 - The weekly schedule itself, which you can read and change from Home Assistant
 - Current mode, boost time left, and when the next scheduled change is
-- Daily energy use from the unit's own meter, split into boost and off-peak
+- Daily energy use from the unit's own meter, split into boost and off-peak, imported as long-term statistics so each day is booked to its own date
 
 ## What you need
 
@@ -60,6 +60,7 @@ If it stays unavailable for a long time, check your Bluetooth proxy. If the prox
 
 ## Notes
 
+- To use the energy in the Energy dashboard, add the statistic "Secure E7 Energy" (not the Energy Today sensor) as an individual device. The unit only meters whole days, so each day's kWh shows in the first hour (00:00 UTC) of that day.
 - Energy figures come from the unit's own meter and are converted at a nominal 230 V, the same way the Secure app does it.
 - Only tested on one unit (an E7+ two-channel, HardwareType 65). Other versions may behave differently. If yours doesn't work, please open an issue.
 - Not affiliated with or endorsed by Secure Controls or Horstmann. Use at your own risk.

@@ -65,6 +65,7 @@ from .const import (
 )
 from .backoff import poll_interval
 from .energy import gap_energy_wh
+from .energy_statistics import async_import_daily_energy
 from .protocol import (
     Reassembler,
     aes_decrypt,
@@ -152,6 +153,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._poll_seconds = SCAN_INTERVAL_SECONDS
         self._consumption: list[dict] = []  # cached daily metered history
         self._consumption_logged = False
+        self._imported: list[dict] | None = None  # rows last sent to statistics
         self._schedule: dict | None = None
         self._schedule_raw: str | None = None  # parsed weekly programme
 
@@ -336,6 +338,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
                 days = await self._fetch_consumption()
                 if days:
                     self._consumption = days
+                    await self._import_statistics(days)
                     if not self._consumption_logged:
                         _LOGGER.info(
                             "secure_e7 metered consumption (raw): %s", days
@@ -473,6 +476,16 @@ class SecureE7Coordinator(DataUpdateCoordinator):
                 nxt = next_change(self._schedule["days"], now.weekday(), now.hour * 60 + now.minute)
             state["next_change_time"], state["next_change_state"] = nxt or (None, None)
         return state
+
+    async def _import_statistics(self, days: list[dict]) -> None:
+        if days == self._imported:
+            return
+        try:
+            await async_import_daily_energy(self.hass, self._mac, days)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("secure_e7 energy statistics import failed: %r", err)
+            return
+        self._imported = days
 
     def _integrate_energy(self, on: bool | None) -> None:
         now = time.monotonic()
