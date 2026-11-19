@@ -29,8 +29,6 @@ from .const import (
     CENTI_AH_TO_KWH,
     CH_HOTWATER_STATE,
     CH_MODE,
-    CH_NEXT_PERIOD,
-    CH_NEXT_SETPOINT,
     CH_SCHEDULE_ENABLE,
     CONNECT_MAX_ATTEMPTS,
     CONSUMPTION_EVERY_N_POLLS,
@@ -50,7 +48,6 @@ from .const import (
     K_OFFPEAK_CHARGE,
     K_TIME,
     MAX_ENERGY_GAP_SECONDS,
-    MAX_TIME,
     OPERATION_TIMEOUT_SECONDS,
     OT_ADVANCE,
     REPLY_TIMEOUT_SECONDS,
@@ -76,6 +73,7 @@ from .protocol import (
     rpc,
     unframe,
 )
+from .status import IncompleteStatus, complete_status, parse_status
 from .schedule import encode_days, next_change, parse_schedule, read_slots, splice
 
 _LOGGER = logging.getLogger(__name__)
@@ -507,40 +505,13 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._last_energy_ts = now
 
     def _parse_status(self, obj: dict) -> dict:
-        res = obj.get("R") or {}
-        channels = res.get("V", []) if isinstance(res, dict) else []
-        state: dict = {
-            "hot_water_on": None,
-            "mode": None,
-            "schedule_enabled": None,
-            "boost_minutes_remaining": None,
-            "next_change_time": None,
-            "next_change_state": None,
-        }
-        for ch in channels:
-            si = ch.get("SI")
-            chars = {c.get("I"): c for c in ch.get("V", [])}
-            if si == SI_HOTWATER:
-                self._hw_boi = ch.get("I")
-                hw = chars.get(CH_HOTWATER_STATE)
-                if hw is not None:
-                    state["hot_water_on"] = bool(hw.get("V"))
-                    if hw.get("OT") == OT_ADVANCE and hw.get("D"):
-                        state["boost_minutes_remaining"] = hw.get("D")
-                sch = chars.get(CH_SCHEDULE_ENABLE)
-                if sch is not None:
-                    state["schedule_enabled"] = bool(sch.get("V"))
-                nxt = chars.get(CH_NEXT_PERIOD)
-                if nxt is not None:
-                    v = nxt.get("V")
-                    if v is not None and v != MAX_TIME:
-                        state["next_change_time"] = f"{v // 60:02d}:{v % 60:02d}"
-                nss = chars.get(CH_NEXT_SETPOINT)
-                if nss is not None and nss.get("V") is not None:
-                    state["next_change_state"] = "on" if nss.get("V") else "off"
-            if CH_MODE in chars and state["mode"] is None:
-                state["mode"] = chars[CH_MODE].get("V")
-        return state
+        state, hw_boi = parse_status(obj)
+        if hw_boi is not None:
+            self._hw_boi = hw_boi
+        try:
+            return complete_status(state, self.data)
+        except IncompleteStatus as err:
+            raise UpdateFailed(f"Incomplete status: {err}") from err
 
     # ---- control -----------------------------------------------------------
     async def _write(self, si: int, boi: int, char: dict) -> None:
