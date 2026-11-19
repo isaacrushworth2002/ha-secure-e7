@@ -68,6 +68,12 @@ def test_a_row_stamped_at_local_midnight_is_booked_to_its_local_date():
     days = [row(0, 1.0, offset=-3600), row(1, 2.0, offset=-3600)]
     rows = energy.daily_statistics(days, "total_kwh", tz=bst)
     assert [r["start"] for r in rows] == [
-        datetime.fromtimestamp(T0 + d * DAY, tz=timezone.utc) for d in range(2)
+        datetime.fromtimestamp(T0 + d * DAY - 3600, tz=timezone.utc) for d in range(2)
     ]
     assert [r["sum"] for r in rows] == [1.0, 3.0]
+
+
+def test_a_local_midnight_start_is_on_the_hour_for_a_half_hour_zone():
+    ist = timezone(timedelta(hours=5, minutes=30))
+    rows = energy.daily_statistics([row(0, 1.0, offset=-19800)], "total_kwh", tz=ist)
+    assert rows[0]["start"].minute == 0

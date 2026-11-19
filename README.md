@@ -79,7 +79,7 @@ If it stays unavailable for a long time, check your Bluetooth proxy. If the prox
 
 ## Notes
 
-- To use the energy in the Energy dashboard, add the statistic "Secure E7 Energy" (not the Energy Today sensor) as an individual device. The unit only meters whole days, so each day's kWh shows in the first hour (00:00 UTC) of that day.
+- To use the energy in the Energy dashboard, add the statistic "Secure E7 Energy" (not the Energy Today sensor) as an individual device. The unit only meters whole days, so each day's kWh shows in the first hour of that day: 00:00 UTC for rows the unit stamps at UTC midnight, local midnight for rows it stamps at local midnight.
 - Energy figures come from the unit's own meter, which counts amp-hours. They are converted at a fixed 230 V, the same way the Secure app does it. A real supply varies a little either side of that, so treat the kWh as close rather than exact.
 - If you used the old Follow Schedule switch, it is now the Timed Boost switch. It keeps its entity id (`switch.immersion_follow_schedule` on an existing install), so automations carry on working, but they now control the boost programme only.
 - Only tested on one unit (an E7+ two-channel, HardwareType 65). Other versions may behave differently. If yours doesn't work, please open an issue.
