@@ -6,6 +6,8 @@ automatically, so nothing needs re-entering.
 """
 from __future__ import annotations
 
+import logging
+
 import voluptuous as vol
 
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntryState
@@ -31,8 +33,10 @@ from .const import (
     SERVICE_SET_SCHEDULE,
 )
 from .coordinator import SecureE7ConfigEntry, SecureE7Coordinator
-from .migration import renamed_unique_id
+from .migration import migration_target
 from .schedule import DAYS, encode_days
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS_T = [Platform(p) for p in PLATFORMS]
 
@@ -110,10 +114,24 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
-@callback
-def _migrate_entity(entity_entry: er.RegistryEntry) -> dict | None:
-    new = renamed_unique_id(entity_entry.unique_id)
-    return {"new_unique_id": new} if new else None
+def _migrate_entity(registry: er.EntityRegistry):
+    @callback
+    def migrate(entity_entry: er.RegistryEntry) -> dict | None:
+        new, taken = migration_target(
+            entity_entry.unique_id,
+            lambda unique_id: registry.async_get_entity_id(
+                entity_entry.domain, entity_entry.platform, unique_id
+            )
+            is not None,
+        )
+        if taken:
+            _LOGGER.warning(
+                "secure_e7 not renaming %s, its new unique id is already registered",
+                entity_entry.entity_id,
+            )
+        return {"new_unique_id": new} if new else None
+
+    return migrate
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: SecureE7ConfigEntry) -> bool:
@@ -129,7 +147,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: SecureE7ConfigEntry) -> 
     )
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
-    await er.async_migrate_entries(hass, entry.entry_id, _migrate_entity)
+    await er.async_migrate_entries(
+        hass, entry.entry_id, _migrate_entity(er.async_get(hass))
+    )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS_T)
     return True
 
