@@ -201,3 +201,27 @@ def test_an_accepted_write_is_shown(coordinator_env):
     c._request = request
     asyncio.run(c._write(1, 1, {"I": 1}, {"mode": "home"}))
     assert c.data == {"mode": "home"}
+
+
+def test_publishing_does_not_mark_a_failed_poll_good(coordinator_env):
+    c = prepare(coordinator_env)
+    c.last_update_success = False
+    c.data = {"schedule": None}
+    c._schedule = {"days": {}}
+    c._publish(c._with_schedule(dict(c.data)))
+    assert c.last_update_success is False
+    assert c.data["schedule"] == {"days": {}}
+    assert c.listener_calls == 1
+
+
+def test_a_write_during_an_outage_keeps_entities_unavailable(coordinator_env):
+    c = prepare(coordinator_env)
+    c.last_update_success = False
+    c.data = {"mode": "off"}
+
+    async def request(hi, si, args=None):
+        return {}
+
+    c._request = request
+    asyncio.run(c._write(1, 1, {"I": 1}, {"mode": "home"}))
+    assert c.last_update_success is False and c.data == {"mode": "home"}

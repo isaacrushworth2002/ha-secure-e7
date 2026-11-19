@@ -473,7 +473,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             return {"object_id": object_id, "raw": self._schedule_raw, "parsed": parsed}
         self._schedule = parsed or self._schedule
         if self.data is not None:
-            self.async_set_updated_data(self._with_schedule(dict(self.data)))
+            self._publish(self._with_schedule(dict(self.data)))
         return self._schedule
 
     async def async_set_schedule(self, changes: dict) -> dict | None:
@@ -499,7 +499,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             raise HomeAssistantError(f"Schedule write failed: {err}") from err
         self._schedule = written or self._schedule
         if self.data is not None:
-            self.async_set_updated_data(self._with_schedule(dict(self.data)))
+            self._publish(self._with_schedule(dict(self.data)))
         if written != expected:
             raise HomeAssistantError(
                 f"Schedule read back does not match what was written: sent {expected}, device has {written}"
@@ -565,7 +565,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         except UpdateFailed as err:
             raise HomeAssistantError(f"Could not write to the heater: {err}") from err
         if self.data is not None:
-            self.async_set_updated_data({**self.data, **expected})
+            self._publish({**self.data, **expected})
         await self.async_request_refresh()
 
     async def _hw_channel(self) -> int:
