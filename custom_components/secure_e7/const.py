@@ -90,6 +90,8 @@ ALLOWED_BOOST_MINUTES = (30, 60, 120)
 DEFAULT_RATING_WATTS = 3000  # typical UK immersion element; change to match yours
 
 SCAN_INTERVAL_SECONDS = 60
+# Longer than this since the last good poll and the heater state is unknown
+MAX_ENERGY_GAP_SECONDS = SCAN_INTERVAL_SECONDS * 5 // 2
 
 # BLE reliability. An ESPHome proxy stops scanning while it tries to connect,
 # so keep connection retries short. Every poll or command is time-limited so a

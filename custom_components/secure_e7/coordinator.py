@@ -49,6 +49,7 @@ from .const import (
     K_OFFPEAK_ACTUAL_MIN,
     K_OFFPEAK_CHARGE,
     K_TIME,
+    MAX_ENERGY_GAP_SECONDS,
     MAX_TIME,
     OPERATION_TIMEOUT_SECONDS,
     OT_ADVANCE,
@@ -63,6 +64,7 @@ from .const import (
     TX_UUID,
 )
 from .backoff import poll_interval
+from .energy import gap_energy_wh
 from .protocol import (
     Reassembler,
     aes_decrypt,
@@ -474,8 +476,10 @@ class SecureE7Coordinator(DataUpdateCoordinator):
 
     def _integrate_energy(self, on: bool | None) -> None:
         now = time.monotonic()
-        if self._last_energy_ts is not None and on:
-            self._energy_wh += self._rating_watts * (now - self._last_energy_ts) / 3600.0
+        if self._last_energy_ts is not None:
+            self._energy_wh += gap_energy_wh(
+                on, self._rating_watts, now - self._last_energy_ts, MAX_ENERGY_GAP_SECONDS
+            )
         self._last_energy_ts = now
 
     def _parse_status(self, obj: dict) -> dict:
