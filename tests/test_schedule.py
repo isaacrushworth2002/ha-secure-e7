@@ -166,3 +166,35 @@ def test_splice_rewrites_only_the_changed_days_and_keeps_the_rest_byte_for_byte(
 def test_encode_days_validates_without_needing_the_whole_week():
     with pytest.raises(ValueError, match="15-minute"):
         schedule.encode_days({"friday": [{"on": "06:05", "off": "07:00"}]})
+
+
+def test_windows_that_touch_across_midnight_are_one_run():
+    days = {d: [] for d in schedule.DAYS}
+    days["monday"] = [{"on": "22:00", "off": "24:00"}]
+    days["tuesday"] = [{"on": "00:00", "off": "01:00"}]
+    assert schedule.next_change(days, 0, 23 * 60) == ("01:00", "off")
+    assert schedule.next_change(days, 0, 12 * 60) == ("22:00", "on")
+
+
+def test_a_window_to_midnight_reports_midnight_as_zero_zero():
+    days = {d: [] for d in schedule.DAYS}
+    days["monday"] = [{"on": "22:00", "off": "24:00"}]
+    assert schedule.next_change(days, 0, 23 * 60) == ("00:00", "off")
+
+
+def test_next_change_wraps_from_sunday_to_monday():
+    days = {d: [] for d in schedule.DAYS}
+    days["sunday"] = [{"on": "22:00", "off": "24:00"}]
+    days["monday"] = [{"on": "00:00", "off": "02:00"}]
+    assert schedule.next_change(days, 6, 23 * 60) == ("02:00", "off")
+
+
+def test_a_programme_that_is_always_on_has_no_next_change():
+    days = {d: [{"on": "00:00", "off": "24:00"}] for d in schedule.DAYS}
+    assert schedule.next_change(days, 3, 600) is None
+
+
+def test_the_same_edge_again_a_week_later_when_it_is_the_only_one():
+    days = {d: [] for d in schedule.DAYS}
+    days["monday"] = [{"on": "07:00", "off": "08:00"}]
+    assert schedule.next_change(days, 0, 8 * 60) == ("07:00", "on")

@@ -150,19 +150,35 @@ def encode_schedule(days: dict) -> list[dict]:
 
 
 def next_change(days: dict, weekday: int, minute: int) -> tuple[str, str] | None:
-    """Next programme edge after (weekday 0=Monday, minute of day), as
-    ("HH:MM", "on" | "off"), looking up to a week ahead. None if the week is empty."""
-    for offset in range(len(DAYS) + 1):
-        day = DAYS[(weekday + offset) % len(DAYS)]
-        edges = sorted(
-            (_minute_of(w[edge]), edge)
-            for w in days.get(day, [])
-            for edge in ("on", "off")
-        )
-        for at, edge in edges:
-            if offset or at > minute:
-                return _hhmm(at), edge
-    return None
+    """Next change in whether the programme is on after (weekday 0=Monday, minute
+    of day), as ("HH:MM", "on" | "off"), looking up to a week ahead.
+
+    Windows that touch across midnight are one run, so no change is reported at
+    the join. None if the week is empty or on all the time. Times are the unit's
+    wall clock, so a clock change does not move them.
+    """
+    horizon = 2 * len(DAYS) * END_OF_DAY
+    runs: list[list[int]] = []
+    for day_index in range(2 * len(DAYS)):
+        base = day_index * END_OF_DAY
+        name = DAYS[(weekday + day_index) % len(DAYS)]
+        for window in sorted(days.get(name, []), key=lambda w: _minute_of(w["on"])):
+            start, end = base + _minute_of(window["on"]), base + _minute_of(window["off"])
+            if runs and start <= runs[-1][1]:
+                runs[-1][1] = max(runs[-1][1], end)
+            else:
+                runs.append([start, end])
+    now = minute
+    edges = sorted(
+        (at, edge)
+        for start, end in runs
+        for at, edge in ((start, "on"), (end, "off"))
+        if now < at < horizon
+    )
+    if not edges:
+        return None
+    at, edge = edges[0]
+    return _hhmm(at % END_OF_DAY), edge
 
 
 def _minute_of(hhmm: str) -> int:
