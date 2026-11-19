@@ -1,9 +1,10 @@
 """Energy bookkeeping that needs no Home Assistant, so it can be unit tested."""
 from __future__ import annotations
 
-from datetime import datetime, time, timezone, tzinfo
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 
 from .consumption import SECONDS_PER_DAY, row_date
+from .schedule import DAYS
 
 
 def gap_energy_wh(on: bool | None, watts: float, elapsed: float, max_gap: float) -> float:
@@ -29,33 +30,111 @@ def day_start(ts: int, tz: tzinfo = timezone.utc) -> datetime:
     return start.replace(minute=0, second=0, microsecond=0)
 
 
-def daily_statistics(
-    days: list[dict], key: str, base: float = 0.0, tz: tzinfo = timezone.utc
-) -> list[dict]:
-    """Cumulative rows for external statistics, one per device day.
+def _local(day: date, minute: int, tz: tzinfo) -> datetime:
+    """UTC instant of a wall-clock minute of the day, so DST days keep local meaning."""
+    wall = datetime.combine(day, time(), tzinfo=tz) + timedelta(minutes=minute)
+    return wall.astimezone(timezone.utc)
 
-    The device only meters whole days, so each day's kWh is placed in the first
-    hour of that day (see day_start and consumption.row_date for `tz`). `base` is
-    the cumulative sum already recorded before the first row.
+
+def _minutes(hhmm: str) -> int:
+    hours, minutes = hhmm.split(":")
+    return int(hours) * 60 + int(minutes)
+
+
+def offpeak_spans(windows: list[dict], day: date, minutes: float, tz: tzinfo) -> list[tuple]:
+    """Where the element ran: `minutes` filled into the day's windows from the first on.
+
+    The thermostat has the element on from the start of the window until the
+    cylinder is hot, so the run is taken as contiguous from the window start.
+    """
+    spans = []
+    left = timedelta(minutes=minutes)
+    for window in sorted(windows, key=lambda w: _minutes(w["on"])):
+        start = _local(day, _minutes(window["on"]), tz)
+        end = _local(day, _minutes(window["off"]), tz)
+        take = min(left, end - start)
+        if take > timedelta(0):
+            spans.append((start, start + take))
+            left -= take
+    return spans
+
+
+def boost_spans(boosts: list[list], day: date, tz: tzinfo, now: float) -> list[tuple]:
+    """The recorded boosts that overlap the local day, cut at its edges."""
+    lo, hi = _local(day, 0, tz), _local(day, 24 * 60, tz)
+    spans = []
+    for start, end in boosts:
+        a = max(datetime.fromtimestamp(start, timezone.utc), lo)
+        b = min(datetime.fromtimestamp(now if end is None else end, timezone.utc), hi)
+        if b > a:
+            spans.append((a, b))
+    return spans
+
+
+def spread(kwh: float, spans: list[tuple]) -> dict[datetime, float]:
+    """`kwh` split across the UTC hours the spans cover, in proportion to the seconds in each."""
+    seconds: dict[datetime, float] = {}
+    for start, end in spans:
+        hour = start.replace(minute=0, second=0, microsecond=0)
+        while hour < end:
+            nxt = hour + timedelta(hours=1)
+            seconds[hour] = seconds.get(hour, 0.0) + (min(end, nxt) - max(start, hour)).total_seconds()
+            hour = nxt
+    total = sum(seconds.values())
+    if total <= 0:
+        return {}
+    return {hour: kwh * share / total for hour, share in seconds.items()}
+
+
+def _add(into: dict, parts: dict) -> None:
+    for hour, kwh in parts.items():
+        into[hour] = into.get(hour, 0.0) + kwh
+
+
+def daily_statistics(
+    days: list[dict],
+    key: str,
+    base: float = 0.0,
+    tz: tzinfo = timezone.utc,
+    schedule: dict | None = None,
+    boosts: list[list] | None = None,
+    now: float = 0.0,
+) -> list[dict]:
+    """Cumulative hourly rows for external statistics.
+
+    The device only meters whole days. Off-peak kWh is spread over the hours the
+    element ran (offpeak_spans, from the day's windows in `schedule`, a
+    {weekday name: [{"on", "off"}]} map, and the actual minutes), and boost kWh
+    over the boosts recorded in `boosts` ([start, end] timestamps). Anything that
+    cannot be placed goes in the first hour of the day (see day_start and
+    consumption.row_date for `tz`). `base` is the cumulative sum already recorded
+    before the first row.
     """
     by_day: dict = {}
     for row in days:
-        value = row.get(key)
-        if value is None:
-            continue
-        by_day[row_date(row["ts"], tz)] = (day_start(row["ts"], tz), float(value))
+        if row.get(key) is not None:
+            by_day[row_date(row["ts"], tz)] = row
+    hours: dict[datetime, float] = {}
+    for day, row in by_day.items():
+        windows = (schedule or {}).get(DAYS[day.weekday()]) or []
+        placed: dict[datetime, float] = {}
+        if key != "boost_kwh":
+            minutes = round(float(row.get("offpeak_actual_h") or 0.0) * 60)
+            offpeak = float(row.get("offpeak_kwh") or 0.0) if key == "total_kwh" else float(row[key])
+            _add(placed, spread(offpeak, offpeak_spans(windows, day, minutes, tz)))
+        if key != "offpeak_kwh":
+            boost = float(row.get("boost_kwh") or 0.0) if key == "total_kwh" else float(row[key])
+            _add(placed, spread(boost, boost_spans(boosts or [], day, tz, now)))
+        rest = float(row[key]) - sum(placed.values())
+        first = day_start(row["ts"], tz)
+        if abs(rest) > 1e-9 or not placed:
+            placed[first] = placed.get(first, 0.0) + rest
+        _add(hours, placed)
     total = base
     rows = []
-    for day in sorted(by_day):
-        start, value = by_day[day]
-        total = round(total + value, 3)
-        rows.append(
-            {
-                "start": start,
-                "sum": total,
-                "state": total,
-            }
-        )
+    for start in sorted(hours):
+        total += hours[start]
+        rows.append({"start": start, "sum": round(total, 3), "state": round(total, 3)})
     return rows
 
 

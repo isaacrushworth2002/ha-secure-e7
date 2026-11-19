@@ -3,7 +3,8 @@
 The Energy dashboard books a sensor's change to the time it is recorded, which
 is wrong for a table the device fills in late. Statistics are keyed on the
 row's own date instead, and the whole table is re-imported when it changes, so
-a late row corrects the day it belongs to.
+a late row corrects the day it belongs to. Within the day, energy is placed in
+the hours the element ran (see energy.daily_statistics).
 """
 from __future__ import annotations
 
@@ -41,7 +42,14 @@ def statistic_id(mac: str, suffix: str) -> str:
     return f"{DOMAIN}:{mac.replace(':', '').lower()}_{suffix}"
 
 
-async def async_import_daily_energy(hass: HomeAssistant, mac: str, days: list[dict]) -> None:
+async def async_import_daily_energy(
+    hass: HomeAssistant,
+    mac: str,
+    days: list[dict],
+    schedule: dict | None = None,
+    boosts: list[list] | None = None,
+    now: float = 0.0,
+) -> None:
     if not days:
         return
     tz = dt_util.DEFAULT_TIME_ZONE
@@ -55,7 +63,7 @@ async def async_import_daily_energy(hass: HomeAssistant, mac: str, days: list[di
 
     for suffix, name, key in SERIES:
         stat_id = statistic_id(mac, suffix)
-        first = daily_statistics(days, key, tz=tz)
+        first = daily_statistics(days, key, tz=tz, schedule=schedule, boosts=boosts, now=now)
         if not first:
             continue
         first_start = first[0]["start"]
@@ -63,7 +71,7 @@ async def async_import_daily_energy(hass: HomeAssistant, mac: str, days: list[di
         base = (earlier or [{}])[-1].get("sum") or 0.0
         later = await recorded(stat_id, first_start, None)
         rows = carry_stale_hours(
-            daily_statistics(days, key, base, tz),
+            daily_statistics(days, key, base, tz, schedule, boosts, now),
             base,
             [dt_util.utc_from_timestamp(row["start"]) for row in later],
         )

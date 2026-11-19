@@ -138,3 +138,15 @@ def test_hours_that_the_table_no_longer_has_hold_the_running_sum(importer):
     rows = added[0][1]
     assert [r["sum"] for r in rows] == [2.0, 8.0, 8.0, 8.0]
     assert [r["start"] for r in rows][-1] == datetime.fromtimestamp(T0 + 3 * DAY, tz=timezone.utc)
+
+
+def test_the_series_are_placed_in_the_hours_the_element_ran(importer):
+    module, added, _, _ = importer
+    row = {"ts": T0, "total_kwh": 4.0, "boost_kwh": 0.0, "offpeak_kwh": 4.0, "offpeak_actual_h": 1.0}
+    window = [{"on": "02:15", "off": "06:00"}]
+    names = "monday tuesday wednesday thursday friday saturday sunday".split()
+    schedule = {name: window for name in names}
+    asyncio.run(module.async_import_daily_energy(None, "AA:BB:CC:DD:EE:FF", [row], schedule))
+    meta, rows = added[0]
+    assert [(r["start"].hour, r["sum"]) for r in rows] == [(2, 3.0), (3, 4.0)]
+    assert [r["start"].hour for r in added[2][1]] == [2, 3]
