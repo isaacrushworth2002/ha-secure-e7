@@ -26,3 +26,18 @@ class PollHealth:
             and self.failures <= MAX_STALE_FAILURES
             and now - self.last_success <= MAX_STALE_SECONDS
         )
+
+
+async def with_retries(call, retries, retry_on, give_up_on=()):
+    """Await call() again after a retry_on error, up to retries more times.
+
+    Errors in give_up_on are raised at once, as retrying cannot help them.
+    """
+    for attempt in range(retries + 1):
+        try:
+            return await call()
+        except give_up_on:
+            raise
+        except retry_on:
+            if attempt == retries:
+                raise

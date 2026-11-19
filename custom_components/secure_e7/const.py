@@ -71,6 +71,9 @@ CONSUMPTION_EVERY_N_POLLS = 30   # ~30 min at a 60 s poll
 OT_NONE = 0
 OT_ADVANCE = 2  # boost
 
+# Hot-water channel business-object id, used until a poll reports it
+DEFAULT_HW_BOI = 2
+
 # Mode values (HomeAway) used as "V" of a Mode characteristic
 MODE_OFF = 0
 MODE_AWAY = 1
@@ -96,11 +99,11 @@ MAX_ENERGY_GAP_SECONDS = SCAN_INTERVAL_SECONDS * 5 // 2
 # BLE reliability. An ESPHome proxy stops scanning while it tries to connect,
 # so keep connection retries short. Every poll or command is time-limited so a
 # hung connection cannot hold the lock for ever; the limit allows for three
-# connection attempts plus the slower polls that also read consumption and
-# the schedule.
+# connection attempts plus the replies that follow.
 CONNECT_MAX_ATTEMPTS = 3
 OPERATION_TIMEOUT_SECONDS = 120
 DISCONNECT_TIMEOUT_SECONDS = 10
 REPLY_TIMEOUT_SECONDS = 12  # wait for the last chunk of one reply
+POLL_RETRIES = 1  # one more try after a failed poll, on a fresh connection
 
 PLATFORMS = ["binary_sensor", "sensor", "switch", "select"]
