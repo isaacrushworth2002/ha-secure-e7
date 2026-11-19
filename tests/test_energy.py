@@ -77,3 +77,19 @@ def test_a_local_midnight_start_is_on_the_hour_for_a_half_hour_zone():
     ist = timezone(timedelta(hours=5, minutes=30))
     rows = energy.daily_statistics([row(0, 1.0, offset=-19800)], "total_kwh", tz=ist)
     assert rows[0]["start"].minute == 0
+
+
+def test_stale_hours_hold_the_sum_of_the_row_before_them():
+    def at(d):
+        return datetime.fromtimestamp(T0 + d * DAY, tz=timezone.utc)
+
+    rows = [{"start": at(0), "sum": 2.0, "state": 2.0}]
+    out = energy.carry_stale_hours(rows, 0.0, [at(0), at(1), at(2)])
+    assert [(r["start"], r["sum"]) for r in out] == [(at(0), 2.0), (at(1), 2.0), (at(2), 2.0)]
+
+
+def test_a_stale_hour_before_the_first_row_holds_the_base():
+    first = datetime.fromtimestamp(T0 + DAY, tz=timezone.utc)
+    rows = [{"start": first, "sum": 5.0, "state": 5.0}]
+    out = energy.carry_stale_hours(rows, 3.0, [datetime.fromtimestamp(T0, tz=timezone.utc)])
+    assert [r["sum"] for r in out] == [3.0, 5.0]

@@ -57,3 +57,18 @@ def daily_statistics(
             }
         )
     return rows
+
+
+def carry_stale_hours(rows: list[dict], base: float, stale_starts: list[datetime]) -> list[dict]:
+    """`rows` plus a flat row for each hour that has an old statistic but no row now.
+
+    Statistics cannot be deleted, so an hour the table no longer has is kept
+    consistent by holding the running sum, as if nothing was used that day.
+    """
+    known = {row["start"] for row in rows}
+    extra = []
+    for start in sorted(set(stale_starts) - known):
+        before = [row for row in rows if row["start"] < start]
+        total = before[-1]["sum"] if before else base
+        extra.append({"start": start, "sum": total, "state": total})
+    return sorted(rows + extra, key=lambda row: row["start"])

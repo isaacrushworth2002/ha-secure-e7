@@ -8,6 +8,7 @@ a late row corrects the day it belongs to.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import (
@@ -24,7 +25,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
-from .energy import daily_statistics
+from .energy import carry_stale_hours, daily_statistics
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,24 +44,29 @@ def statistic_id(mac: str, suffix: str) -> str:
 async def async_import_daily_energy(hass: HomeAssistant, mac: str, days: list[dict]) -> None:
     if not days:
         return
-    first = daily_statistics(days, "total_kwh", tz=dt_util.DEFAULT_TIME_ZONE)
-    if not first:
-        return
-    first_start = first[0]["start"]
+    tz = dt_util.DEFAULT_TIME_ZONE
+    recorder = get_instance(hass)
+
+    async def recorded(stat_id: str, start: datetime, end: datetime | None) -> list[dict]:
+        found = await recorder.async_add_executor_job(
+            statistics_during_period, hass, start, end, {stat_id}, "hour", None, {"sum"}
+        )
+        return found.get(stat_id) or []
+
     for suffix, name, key in SERIES:
         stat_id = statistic_id(mac, suffix)
-        earlier = await get_instance(hass).async_add_executor_job(
-            statistics_during_period,
-            hass,
-            dt_util.utc_from_timestamp(0),
-            first_start,
-            {stat_id},
-            "hour",
-            None,
-            {"sum"},
+        first = daily_statistics(days, key, tz=tz)
+        if not first:
+            continue
+        first_start = first[0]["start"]
+        earlier = await recorded(stat_id, dt_util.utc_from_timestamp(0), first_start)
+        base = (earlier or [{}])[-1].get("sum") or 0.0
+        later = await recorded(stat_id, first_start, None)
+        rows = carry_stale_hours(
+            daily_statistics(days, key, base, tz),
+            base,
+            [dt_util.utc_from_timestamp(row["start"]) for row in later],
         )
-        base = (earlier.get(stat_id) or [{}])[-1].get("sum") or 0.0
-        rows = daily_statistics(days, key, base, dt_util.DEFAULT_TIME_ZONE)
         metadata = StatisticMetaData(
             mean_type=StatisticMeanType.NONE,
             has_sum=True,

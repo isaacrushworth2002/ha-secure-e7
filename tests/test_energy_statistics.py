@@ -28,10 +28,10 @@ def importer(monkeypatch):
 
     recorder.async_add_executor_job = run_in_executor
     earlier = {}
+    later = {}
 
     def during(hass, start, end, ids, period, units, types_):
-        during.call = (end, ids)
-        return earlier
+        return earlier if end is not None else later
 
     mods = {
         "homeassistant": stub("homeassistant"),
@@ -69,7 +69,7 @@ def importer(monkeypatch):
     import importlib
 
     module = importlib.import_module("secure_e7_pkg.energy_statistics")
-    yield module, added, earlier, during
+    yield module, added, earlier, later
     for name in list(sys.modules):
         if name.startswith("secure_e7_pkg"):
             del sys.modules[name]
@@ -97,7 +97,7 @@ def test_imports_three_series_keyed_on_the_integration(importer):
 
 
 def test_sum_continues_from_statistics_before_the_first_row(importer):
-    module, added, earlier, during = importer
+    module, added, earlier, _ = importer
     earlier["secure_e7:aabbccddeeff_energy"] = [{"sum": 50.0}]
     asyncio.run(module.async_import_daily_energy(None, "AA:BB:CC:DD:EE:FF", days(2.0)))
     assert added[0][1][0]["sum"] == 52.0
@@ -108,3 +108,33 @@ def test_nothing_is_imported_without_rows(importer):
     module, added, _, _ = importer
     asyncio.run(module.async_import_daily_energy(None, "AA:BB:CC:DD:EE:FF", []))
     assert added == []
+
+
+def test_each_series_takes_its_base_from_before_its_own_first_row(importer):
+    module, added, earlier, _ = importer
+    d = days(2.0, 6.0)
+    d[0]["total_kwh"] = None
+    d[0]["boost_kwh"] = 1.0
+    seen = []
+    real = module.statistics_during_period
+
+    def spy(hass, start, end, ids, *rest):
+        seen.append((next(iter(ids)), start, end))
+        return real(hass, start, end, ids, *rest)
+
+    module.statistics_during_period = spy
+    asyncio.run(module.async_import_daily_energy(None, "AA:BB:CC:DD:EE:FF", d))
+    ends = {stat: end for stat, _, end in seen if end is not None}
+    assert ends["secure_e7:aabbccddeeff_energy"] == datetime.fromtimestamp(T0 + DAY, tz=timezone.utc)
+    assert ends["secure_e7:aabbccddeeff_energy_boost"] == datetime.fromtimestamp(T0, tz=timezone.utc)
+
+
+def test_hours_that_the_table_no_longer_has_hold_the_running_sum(importer):
+    module, added, _, later = importer
+    later["secure_e7:aabbccddeeff_energy"] = [
+        {"start": T0 + DAY * 1.0}, {"start": T0 + DAY * 2.0}, {"start": T0 + DAY * 3.0}
+    ]
+    asyncio.run(module.async_import_daily_energy(None, "AA:BB:CC:DD:EE:FF", days(2.0, 6.0)))
+    rows = added[0][1]
+    assert [r["sum"] for r in rows] == [2.0, 8.0, 8.0, 8.0]
+    assert [r["start"] for r in rows][-1] == datetime.fromtimestamp(T0 + 3 * DAY, tz=timezone.utc)
