@@ -225,3 +225,50 @@ def test_a_write_during_an_outage_keeps_entities_unavailable(coordinator_env):
     c._request = request
     asyncio.run(c._write(1, 1, {"I": 1}, {"mode": "home"}))
     assert c.last_update_success is False and c.data == {"mode": "home"}
+
+
+def test_a_write_schedules_a_delayed_refresh_instead_of_an_immediate_one(coordinator_env):
+    c = prepare(coordinator_env)
+    c.data = {"mode": "off"}
+
+    async def request(hi, si, args=None):
+        return {}
+
+    c._request = request
+    asyncio.run(c._write(1, 1, {"I": 1}, {"mode": "home"}))
+    assert c.refresh_requests == 0
+    assert [d for d, _ in coordinator_env.later_calls] == [5]
+    asyncio.run(c._confirm_write(None))
+    assert c.refresh_requests == 1
+
+
+def test_a_second_write_replaces_the_pending_refresh(coordinator_env):
+    c = prepare(coordinator_env)
+
+    async def request(hi, si, args=None):
+        return {}
+
+    c._request = request
+
+    async def run():
+        await c._write(1, 1, {"I": 1}, {"mode": "home"})
+        await c._write(1, 1, {"I": 1}, {"mode": "off"})
+
+    asyncio.run(run())
+    assert len(coordinator_env.later_calls) == 1
+
+
+def test_shutdown_cancels_the_pending_refresh(coordinator_env):
+    c = prepare(coordinator_env)
+
+    async def request(hi, si, args=None):
+        return {}
+
+    c._request = request
+
+    async def run():
+        await c._write(1, 1, {"I": 1}, {"mode": "home"})
+        await c.async_shutdown()
+
+    asyncio.run(run())
+    assert coordinator_env.later_calls == []

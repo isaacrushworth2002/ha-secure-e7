@@ -22,6 +22,7 @@ from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -56,13 +57,15 @@ from .const import (
     SI_THERMOSTAT,
     SLOW_READ_TIMEOUT_SECONDS,
     TX_UUID,
+    WRITE_CONFIRM_DELAY_SECONDS,
     WRITE_RETRIES,
+    WRITE_SETTLE_SECONDS,
 )
 from .backoff import poll_interval
 from .consumption import latest_row, parse_consumption, row_date
 from .energy import gap_energy_wh
 from .energy_statistics import async_import_daily_energy
-from .resilience import PollHealth, with_retries
+from .resilience import PendingWrite, PollHealth, with_retries
 from .protocol import (
     Reassembler,
     aes_decrypt,
@@ -135,6 +138,8 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._slow_task: asyncio.Task | None = None
         self._consumption_read = False  # the slow reads have worked at least once
         self._schedule_read = False
+        self._pending_write = PendingWrite()
+        self._cancel_confirm = None
         self._waiting = 0  # callers queued for the session lock
 
     # ---- connection / auth -------------------------------------------------
@@ -337,7 +342,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         """One GetAll request; the caller holds the session."""
         obj = await self._request(HI_GET_ALL, SI_BBSERVER)
         _LOGGER.debug("secure_e7 GetAllServiceValues raw: %s", obj)
-        state = self._parse_status(obj)
+        state = self._pending_write.apply(self._parse_status(obj), time.monotonic())
         self._integrate_energy(state.get("hot_water_on"))
         state["estimated_power"] = (
             self._rating_watts if state.get("hot_water_on") else 0
@@ -549,7 +554,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
 
     # ---- control -----------------------------------------------------------
     async def _write(self, si: int, boi: int, char: dict, expected: dict) -> None:
-        """Send a write, show its effect at once, then refresh to confirm it.
+        """Send a write, show its effect at once, then refresh a few seconds later to confirm it.
 
         A failed write is reported to the caller and leaves the entities as they were.
         """
@@ -564,8 +569,17 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             await with_retries(send, WRITE_RETRIES, UpdateFailed, DeviceUnreachable)
         except UpdateFailed as err:
             raise HomeAssistantError(f"Could not write to the heater: {err}") from err
+        self._pending_write.set(expected, time.monotonic(), WRITE_SETTLE_SECONDS)
         if self.data is not None:
             self._publish({**self.data, **expected})
+        if self._cancel_confirm is not None:
+            self._cancel_confirm()
+        self._cancel_confirm = async_call_later(
+            self.hass, WRITE_CONFIRM_DELAY_SECONDS, self._confirm_write
+        )
+
+    async def _confirm_write(self, _now) -> None:
+        self._cancel_confirm = None
         await self.async_request_refresh()
 
     async def _hw_channel(self) -> int:
@@ -611,6 +625,9 @@ class SecureE7Coordinator(DataUpdateCoordinator):
 
     async def async_shutdown(self) -> None:
         await super().async_shutdown()
+        if self._cancel_confirm is not None:
+            self._cancel_confirm()
+            self._cancel_confirm = None
         if self._slow_task is not None:
             self._slow_task.cancel()
         async with self._lock:

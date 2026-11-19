@@ -119,3 +119,24 @@ def test_other_errors_pass_straight_through():
 
 def test_two_retries_allow_three_tries():
     assert run_retries([Transient(), Transient(), "ok"], retries=2) == ("ok", 3)
+
+
+def test_a_poll_soon_after_a_write_still_shows_what_was_written():
+    p = resilience.PendingWrite()
+    p.set({"mode": "home"}, now=100, settle=4)
+    assert p.apply({"mode": "off", "x": 1}, 102) == {"mode": "home", "x": 1}
+    assert p.apply({"mode": "off", "x": 1}, 104) == {"mode": "off", "x": 1}
+
+
+def test_writes_close_together_are_both_shown():
+    p = resilience.PendingWrite()
+    p.set({"mode": "home"}, 100, 4)
+    p.set({"timed_boost": True}, 101, 4)
+    assert p.apply({}, 102) == {"mode": "home", "timed_boost": True}
+
+
+def test_an_old_write_is_forgotten_before_the_next_one():
+    p = resilience.PendingWrite()
+    p.set({"mode": "home"}, 100, 4)
+    p.set({"timed_boost": True}, 200, 4)
+    assert p.apply({}, 201) == {"timed_boost": True}

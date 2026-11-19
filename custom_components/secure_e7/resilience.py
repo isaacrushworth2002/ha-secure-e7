@@ -37,6 +37,21 @@ class PollHealth:
         return self.auth_failures >= AUTH_FAILURES_BEFORE_REAUTH
 
 
+class PendingWrite:
+    """What was last written, shown over polls that may still read the old state."""
+
+    def __init__(self) -> None:
+        self.expected: dict = {}
+        self.until = 0.0
+
+    def set(self, expected: dict, now: float, settle: float) -> None:
+        self.expected = {**self.expected, **expected} if now < self.until else dict(expected)
+        self.until = now + settle
+
+    def apply(self, state: dict, now: float) -> dict:
+        return {**state, **self.expected} if now < self.until else state
+
+
 async def with_retries(call, retries, retry_on, give_up_on=()):
     """Await call() again after a retry_on error, up to retries more times.
 

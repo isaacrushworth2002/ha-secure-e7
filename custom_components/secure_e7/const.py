@@ -114,6 +114,8 @@ SLOW_READ_TIMEOUT_SECONDS = 30  # each of the consumption and schedule reads
 DISCONNECT_TIMEOUT_SECONDS = 10
 REPLY_TIMEOUT_SECONDS = 12  # wait for the last chunk of one reply
 WRITE_RETRIES = 2
+WRITE_CONFIRM_DELAY_SECONDS = 5  # let the heater apply a write before reading it back
+WRITE_SETTLE_SECONDS = 4  # polls this soon after a write keep showing what was written
 POLL_RETRIES = 1  # one more try after a failed poll, on a fresh connection
 
 PLATFORMS = ["binary_sensor", "sensor", "switch", "select"]
