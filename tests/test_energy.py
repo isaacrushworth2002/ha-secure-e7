@@ -257,3 +257,19 @@ def test_a_growing_partial_day_is_placed_from_the_window_start_each_time():
     later = energy.daily_statistics([night(ts, 4.5, 90)], "offpeak_kwh", tz=LONDON, schedule=NIGHT)
     assert placed(early) == {utc(2026, 11, 14, 2): 1.5}
     assert placed(later) == {utc(2026, 11, 14, 2): 2.25, utc(2026, 11, 14, 3): 2.25}
+
+
+def test_a_boost_is_recorded_from_the_first_active_poll_to_the_first_idle_one():
+    log = []
+    assert energy.note_boost(log, False, 100.0) is False
+    assert energy.note_boost(log, True, 200.0) is True
+    assert energy.note_boost(log, True, 260.0) is False
+    assert log == [[200.0, None]]
+    assert energy.note_boost(log, False, 320.0) is True
+    assert log == [[200.0, 320.0]]
+
+
+def test_old_boosts_are_dropped():
+    log = [[0.0, 10.0]]
+    energy.note_boost(log, True, 50 * DAY)
+    assert log == [[50 * DAY, None]]

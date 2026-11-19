@@ -59,6 +59,22 @@ def offpeak_spans(windows: list[dict], day: date, minutes: float, tz: tzinfo) ->
     return spans
 
 
+def note_boost(log: list[list], active: bool, now: float, keep: float = 40 * SECONDS_PER_DAY) -> bool:
+    """Open or close the boost record from a poll. True if the log changed.
+
+    An entry is [start, end], end None while the boost runs.
+    """
+    open_entry = bool(log) and log[-1][1] is None
+    if active and not open_entry:
+        log.append([now, None])
+    elif not active and open_entry:
+        log[-1][1] = now
+    else:
+        return False
+    log[:] = [e for e in log if (e[1] is None or e[1] > now - keep)]
+    return True
+
+
 def boost_spans(boosts: list[list], day: date, tz: tzinfo, now: float) -> list[tuple]:
     """The recorded boosts that overlap the local day, cut at its edges."""
     lo, hi = _local(day, 0, tz), _local(day, 24 * 60, tz)

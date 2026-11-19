@@ -272,3 +272,22 @@ def test_shutdown_cancels_the_pending_refresh(coordinator_env):
 
     asyncio.run(run())
     assert coordinator_env.later_calls == []
+
+
+def test_polls_record_a_boost_and_the_import_gets_it_with_the_programme(coordinator_env):
+    c = prepare(coordinator_env)
+    sent = []
+
+    async def importer(hass, mac, days, schedule, boosts, now):
+        sent.append((days, schedule, [list(b) for b in boosts]))
+
+    coordinator_env.module.async_import_daily_energy = importer
+    c._schedule = {"days": {"monday": []}}
+    asyncio.run(c._load_boosts())
+    c._note_boost(True)
+    c._note_boost(False)
+    asyncio.run(c._import_statistics([{"ts": 1}]))
+    asyncio.run(c._import_statistics([{"ts": 1}]))
+    assert len(sent) == 1
+    days, schedule, boosts = sent[0]
+    assert schedule == {"monday": []} and len(boosts) == 1 and boosts[0][1] >= boosts[0][0]

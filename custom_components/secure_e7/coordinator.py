@@ -23,6 +23,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -63,7 +64,7 @@ from .const import (
 )
 from .backoff import poll_interval
 from .consumption import latest_row, parse_consumption, row_date
-from .energy import gap_energy_wh
+from .energy import gap_energy_wh, note_boost
 from .energy_statistics import async_import_daily_energy
 from .resilience import PendingWrite, PollHealth, with_retries
 from .protocol import (
@@ -132,7 +133,10 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._poll_seconds = SCAN_INTERVAL_SECONDS
         self._consumption: list[dict] = []  # cached daily metered history
         self._consumption_logged = False
-        self._imported: list[dict] | None = None  # rows last sent to statistics
+        self._imported: tuple | None = None  # rows, programme and boosts last sent to statistics
+        self._boosts: list[list] = []  # [start, end] timestamps of boosts seen in polls
+        self._boost_store = Store(hass, 1, f"{DOMAIN}_boosts_{mac.replace(':', '').lower()}")
+        self._boosts_loaded = False
         self._schedule: dict | None = None
         self._schedule_raw: str | None = None  # parsed weekly programme
         self._slow_task: asyncio.Task | None = None
@@ -344,6 +348,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         _LOGGER.debug("secure_e7 GetAllServiceValues raw: %s", obj)
         state = self._pending_write.apply(self._parse_status(obj), time.monotonic())
         self._integrate_energy(state.get("hot_water_on"))
+        self._note_boost(bool(state.get("boost_minutes_remaining")))
         state["estimated_power"] = (
             self._rating_watts if state.get("hot_water_on") else 0
         )
@@ -525,15 +530,35 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             state["next_change_time"], state["next_change_state"] = nxt or (None, None)
         return state
 
-    async def _import_statistics(self, days: list[dict]) -> None:
-        if days == self._imported:
+    def _note_boost(self, active: bool) -> None:
+        if self._boosts_loaded and note_boost(self._boosts, active, time.time()):
+            self._boost_store.async_delay_save(lambda: {"boosts": self._boosts}, 10)
+
+    async def _load_boosts(self) -> None:
+        if self._boosts_loaded:
             return
         try:
-            await async_import_daily_energy(self.hass, self._mac, days)
+            saved = await self._boost_store.async_load()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("secure_e7 boost log not read: %r", err)
+            saved = None
+        self._boosts = (saved or {}).get("boosts", [])
+        self._boosts_loaded = True
+
+    async def _import_statistics(self, days: list[dict]) -> None:
+        await self._load_boosts()
+        schedule = (self._schedule or {}).get("days")
+        key = (days, schedule, [list(b) for b in self._boosts])
+        if key == self._imported:
+            return
+        try:
+            await async_import_daily_energy(
+                self.hass, self._mac, days, schedule, self._boosts, time.time()
+            )
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("secure_e7 energy statistics import failed: %r", err)
             return
-        self._imported = days
+        self._imported = key
 
     def _integrate_energy(self, on: bool | None) -> None:
         now = time.monotonic()

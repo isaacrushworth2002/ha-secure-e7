@@ -86,6 +86,16 @@ def _ha_stubs():
         def __class_getitem__(cls, item):
             return cls
 
+    class Store:
+        def __init__(self, hass, version, key):
+            self.saved = None
+
+        async def async_load(self):
+            return self.saved
+
+        def async_delay_save(self, data_func, delay=0):
+            self.saved = data_func()
+
     later_calls = []
 
     def async_call_later(hass, delay, action):
@@ -125,6 +135,7 @@ def _ha_stubs():
             UpdateFailed=UpdateFailed,
         ),
         _module("homeassistant.helpers.event", async_call_later=async_call_later),
+        _module("homeassistant.helpers.storage", Store=Store),
         _module("homeassistant.util"),
         _module(
             "homeassistant.util.dt",
