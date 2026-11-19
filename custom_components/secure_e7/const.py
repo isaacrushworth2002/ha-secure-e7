@@ -104,6 +104,7 @@ CONNECT_MAX_ATTEMPTS = 3
 OPERATION_TIMEOUT_SECONDS = 120
 DISCONNECT_TIMEOUT_SECONDS = 10
 REPLY_TIMEOUT_SECONDS = 12  # wait for the last chunk of one reply
+WRITE_RETRIES = 2
 POLL_RETRIES = 1  # one more try after a failed poll, on a fresh connection
 
 PLATFORMS = ["binary_sensor", "sensor", "switch", "select"]

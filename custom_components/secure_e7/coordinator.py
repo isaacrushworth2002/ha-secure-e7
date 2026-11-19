@@ -49,6 +49,8 @@ from .const import (
     K_TIME,
     MAX_ENERGY_GAP_SECONDS,
     OPERATION_TIMEOUT_SECONDS,
+    MODE_HOME,
+    MODE_OFF,
     POLL_RETRIES,
     OT_ADVANCE,
     REPLY_TIMEOUT_SECONDS,
@@ -60,6 +62,7 @@ from .const import (
     SI_SCHEDULE,
     SI_THERMOSTAT,
     TX_UUID,
+    WRITE_RETRIES,
 )
 from .backoff import poll_interval
 from .energy import gap_energy_wh
@@ -525,9 +528,22 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Incomplete status: {err}") from err
 
     # ---- control -----------------------------------------------------------
-    async def _write(self, si: int, boi: int, char: dict) -> None:
-        async with self._session():
-            await self._request(HI_WRITE, si, [boi, char])
+    async def _write(self, si: int, boi: int, char: dict, expected: dict) -> None:
+        """Send a write, show its effect at once, then refresh to confirm it.
+
+        A failed write is reported to the caller and leaves the entities as they were.
+        """
+
+        async def send() -> None:
+            async with self._session():
+                await self._request(HI_WRITE, si, [boi, char])
+
+        try:
+            await with_retries(send, WRITE_RETRIES, UpdateFailed, DeviceUnreachable)
+        except UpdateFailed as err:
+            raise HomeAssistantError(f"Could not write to the heater: {err}") from err
+        if self.data is not None:
+            self.async_set_updated_data({**self.data, **expected})
         await self.async_request_refresh()
 
     async def _hw_channel(self) -> int:
@@ -538,23 +554,37 @@ class SecureE7Coordinator(DataUpdateCoordinator):
     async def async_boost(self, minutes: int) -> None:
         boi = await self._hw_channel()
         await self._write(
-            SI_HOTWATER, boi, {"I": CH_HOTWATER_STATE, "V": 0, "OT": OT_ADVANCE, "D": minutes}
+            SI_HOTWATER,
+            boi,
+            {"I": CH_HOTWATER_STATE, "V": 0, "OT": OT_ADVANCE, "D": minutes},
+            {"hot_water_on": True, "boost_minutes_remaining": minutes},
         )
 
     async def async_cancel_boost(self) -> None:
         boi = await self._hw_channel()
         await self._write(
-            SI_HOTWATER, boi, {"I": CH_HOTWATER_STATE, "V": 0, "OT": OT_ADVANCE, "D": 0}
+            SI_HOTWATER,
+            boi,
+            {"I": CH_HOTWATER_STATE, "V": 0, "OT": OT_ADVANCE, "D": 0},
+            {"hot_water_on": False, "boost_minutes_remaining": None},
         )
 
     async def async_set_power(self, on: bool) -> None:
         # Master Home/Off mode lives on the Thermostat service, boi 1.
-        await self._write(SI_THERMOSTAT, 1, {"I": CH_MODE, "V": 2 if on else 0})
+        await self._write(
+            SI_THERMOSTAT,
+            1,
+            {"I": CH_MODE, "V": 2 if on else 0},
+            {"mode": MODE_HOME if on else MODE_OFF},
+        )
 
     async def async_set_schedule_enabled(self, enabled: bool) -> None:
         boi = await self._hw_channel()
         await self._write(
-            SI_HOTWATER, boi, {"I": CH_SCHEDULE_ENABLE, "V": 1 if enabled else 0}
+            SI_HOTWATER,
+            boi,
+            {"I": CH_SCHEDULE_ENABLE, "V": 1 if enabled else 0},
+            {"schedule_enabled": enabled},
         )
 
     async def async_shutdown(self) -> None:
