@@ -125,6 +125,7 @@ def daily_statistics(
     boosts: list[list] | None = None,
     now: float = 0.0,
     snapshots: dict[str, list[dict]] | None = None,
+    window_tz: tzinfo | None = None,
 ) -> list[dict]:
     """Cumulative hourly rows for external statistics.
 
@@ -136,7 +137,8 @@ def daily_statistics(
     over the boosts recorded in `boosts` ([start, end] timestamps). Anything that
     cannot be placed goes in the first hour of the day (see day_start and
     consumption.row_date for `tz`). `base` is the cumulative sum already recorded
-    before the first row.
+    before the first row. The windows are read in `window_tz`, the unit's clock,
+    when it differs from `tz`.
     """
     by_day: dict = {}
     for row in days:
@@ -151,7 +153,7 @@ def daily_statistics(
         if key != "boost_kwh":
             minutes = round(float(row.get("offpeak_actual_h") or 0.0) * 60)
             offpeak = float(row.get("offpeak_kwh") or 0.0) if key == "total_kwh" else float(row[key])
-            _add(placed, spread(offpeak, offpeak_spans(windows, day, minutes, tz)))
+            _add(placed, spread(offpeak, offpeak_spans(windows, day, minutes, window_tz or tz)))
         if key != "offpeak_kwh":
             boost = float(row.get("boost_kwh") or 0.0) if key == "total_kwh" else float(row[key])
             _add(placed, spread(boost, boost_spans(boosts or [], day, tz, now)))

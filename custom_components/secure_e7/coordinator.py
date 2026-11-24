@@ -15,7 +15,7 @@ import time
 from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from bleak_retry_connector import establish_connection
 
@@ -86,7 +86,15 @@ from .protocol import (
     unframe,
 )
 from .status import IncompleteStatus, complete_status, parse_status, raw_characteristics
-from .schedule import DAYS, encode_days, next_change, parse_schedule, read_slots, splice
+from .schedule import (
+    DAYS,
+    encode_days,
+    next_change,
+    parse_schedule,
+    read_slots,
+    splice,
+    unit_timezone,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -395,10 +403,15 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self.data = self._derive(data)
         self.async_update_listeners()
 
+    def _unit_now(self, follows_dst: bool | None) -> datetime:
+        """The time on the unit's own clock, which its programme runs by."""
+        now = dt_util.now()
+        return now.astimezone(unit_timezone(dt_util.DEFAULT_TIME_ZONE, follows_dst, now.year))
+
     def _derive(self, state: dict) -> dict:
         """Add whether the element is on and the estimated power that goes with it."""
         samples = self._power_samples
-        now = dt_util.now()
+        now = self._unit_now(state.get("dst"))
         schedule = state.get("schedule")
         heating, basis = heating_state(
             state.get("hot_water_on"),
@@ -606,7 +619,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         """
         state["schedule"] = self._schedule
         if self._schedule is not None:
-            now = dt_util.now()
+            now = self._unit_now(state.get("dst"))
             nxt = next_change(self._schedule["days"], now.weekday(), now.hour * 60 + now.minute)
             state["next_change_time"], state["next_change_state"] = nxt or (None, None)
         return state
@@ -669,12 +682,15 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         schedule = (self._schedule or {}).get("days")
         boosts = [list(b) for b in self._boosts]
         snapshots = {k: [dict(w) for w in v] for k, v in self._programmes.items()}
-        key = (days, schedule, boosts, snapshots)
+        window_tz = unit_timezone(
+            dt_util.DEFAULT_TIME_ZONE, (self.data or {}).get("dst"), dt_util.now().year
+        )
+        key = (days, schedule, boosts, snapshots, window_tz)
         if key == self._imported:
             return
         try:
             await async_import_daily_energy(
-                self.hass, self._mac, days, schedule, boosts, time.time(), snapshots
+                self.hass, self._mac, days, schedule, boosts, time.time(), snapshots, window_tz
             )
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("secure_e7 energy statistics import failed: %r", err)

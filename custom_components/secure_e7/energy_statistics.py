@@ -9,7 +9,7 @@ the hours the element ran (see energy.daily_statistics).
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, tzinfo
 
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import (
@@ -50,6 +50,7 @@ async def async_import_daily_energy(
     boosts: list[list] | None = None,
     now: float = 0.0,
     snapshots: dict | None = None,
+    window_tz: tzinfo | None = None,
 ) -> None:
     if not days:
         return
@@ -64,7 +65,10 @@ async def async_import_daily_energy(
 
     for suffix, name, key in SERIES:
         stat_id = statistic_id(mac, suffix)
-        first = daily_statistics(days, key, tz=tz, schedule=schedule, boosts=boosts, now=now, snapshots=snapshots)
+        first = daily_statistics(
+            days, key, tz=tz, schedule=schedule, boosts=boosts, now=now, snapshots=snapshots,
+            window_tz=window_tz,
+        )
         if not first:
             continue
         first_start = first[0]["start"]
@@ -72,7 +76,7 @@ async def async_import_daily_energy(
         base = (earlier or [{}])[-1].get("sum") or 0.0
         later = await recorded(stat_id, first_start, None)
         rows = carry_stale_hours(
-            daily_statistics(days, key, base, tz, schedule, boosts, now, snapshots),
+            daily_statistics(days, key, base, tz, schedule, boosts, now, snapshots, window_tz),
             base,
             [dt_util.utc_from_timestamp(row["start"]) for row in later],
         )

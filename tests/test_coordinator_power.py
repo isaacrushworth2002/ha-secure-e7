@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -58,6 +59,15 @@ def test_the_off_peak_run_shows_power_although_hot_water_reads_off(coordinator_e
     at(coordinator_env, 12)
     data = c._derive(state())
     assert data["heating"] is False and data["estimated_power"] == 0
+
+
+def test_a_unit_without_daylight_saving_runs_an_hour_later_in_summer(coordinator_env):
+    zone = ZoneInfo("Europe/London")
+    coordinator_env.module.dt_util.DEFAULT_TIME_ZONE = zone
+    coordinator_env.module.dt_util.now = lambda: datetime(2026, 7, 4, 2, 30, tzinfo=zone)
+    c = make_coordinator(coordinator_env)
+    assert c._derive(state(dst=True))["heating"] is True
+    assert c._derive(state(dst=False))["heating"] is False
 
 
 def test_a_published_write_works_the_state_out_again(coordinator_env):

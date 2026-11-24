@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from conftest import load
 
 energy = load("energy")
+schedule_module = load("schedule")
 
 DAY = 86400
 T0 = 1_700_006_400 - 1_700_006_400 % DAY  # a UTC midnight
@@ -310,3 +311,16 @@ def test_a_boost_left_open_cannot_claim_more_than_the_longest_boost():
     ts = int(utc(2026, 11, 14).timestamp())
     spans = energy.boost_spans([[ts + 3600.0, None]], utc(2026, 11, 14).date(), timezone.utc, ts + DAY)
     assert spans == [(utc(2026, 11, 14, 1), utc(2026, 11, 14, 4))]
+
+
+def test_a_unit_on_standard_time_runs_its_window_an_hour_later_in_summer():
+    ts = int(utc(2026, 7, 4).timestamp())
+    window_tz = schedule_module.unit_timezone(LONDON, False, 2026)
+    rows = energy.daily_statistics(
+        [night(ts, 3.0, 60)], "offpeak_kwh", tz=LONDON, schedule=NIGHT, window_tz=window_tz
+    )
+    assert min(row["start"] for row in rows).hour == 2
+    assert schedule_module.unit_timezone(LONDON, True, 2026) is LONDON
+    assert schedule_module.unit_timezone(LONDON, None, 2026) is LONDON
+    dublin = schedule_module.unit_timezone(ZoneInfo("Europe/Dublin"), False, 2026)
+    assert dublin.utcoffset(None) == timedelta(0)

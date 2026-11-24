@@ -9,6 +9,8 @@ Kept free of Home Assistant imports so it can be unit tested on its own.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone, tzinfo
+
 DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 SLOTS_PER_DAY = 6
 K_OFFSET = "O"  # minute of day the slot starts
@@ -150,6 +152,16 @@ def encode_schedule(days: dict) -> list[dict]:
         raise ValueError(f"missing days: {', '.join(missing)}")
     encoded = encode_days(days)
     return [slot for day in DAYS for slot in encoded[day]]
+
+
+def unit_timezone(tz: tzinfo, follows_dst: bool | None, year: int) -> tzinfo:
+    """The zone the unit's clock keeps, for a home in `tz`.
+
+    With daylight saving switched off on the unit it stays on standard time.
+    """
+    if follows_dst is not False:
+        return tz
+    return timezone(min(datetime(year, month, 1, tzinfo=tz).utcoffset() for month in (1, 7)))
 
 
 def is_on_at(windows: list[dict], minute: int) -> bool:

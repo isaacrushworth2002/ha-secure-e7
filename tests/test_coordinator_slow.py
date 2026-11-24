@@ -279,7 +279,7 @@ def test_polls_record_a_boost_and_the_import_gets_it_with_the_programme(coordina
     c = prepare(coordinator_env)
     sent = []
 
-    async def importer(hass, mac, days, schedule, boosts, now, snapshots):
+    async def importer(hass, mac, days, schedule, boosts, now, snapshots, window_tz):
         sent.append((days, schedule, [list(b) for b in boosts]))
 
     coordinator_env.module.async_import_daily_energy = importer
@@ -298,7 +298,7 @@ def test_a_day_keeps_the_windows_it_first_had_when_the_programme_is_edited(coord
     c = prepare(coordinator_env)
     sent = []
 
-    async def importer(hass, mac, days, schedule, boosts, now, snapshots):
+    async def importer(hass, mac, days, schedule, boosts, now, snapshots, window_tz):
         sent.append((schedule, snapshots))
 
     coordinator_env.module.async_import_daily_energy = importer
