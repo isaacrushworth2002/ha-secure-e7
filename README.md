@@ -48,12 +48,26 @@ The unit keeps two programmes. The off-peak programme is the daily window that h
 | Timed Boost switch | Turns the boost programme on or off. It does not stop the off-peak run, so switching it off will not stop the heater at 02:15 |
 | Schedule sensor and `set_schedule` | Read and write the off-peak programme |
 | Next Change Time and State | The next on or off edge of the off-peak programme, from the schedule read, in the unit's local time |
-| Heating | Whether the element is on now |
+| Heating | Whether the element is switched on, by a boost or by the off-peak programme. The `basis` attribute says which |
 | Panel Lock | Diagnostic: whether the front panel is locked |
 | Daylight Saving | Diagnostic: whether the heater clock follows daylight saving |
-| Estimated Power | The rated power while the element is on, or 0. The unit reports no live power, voltage or current |
+| Estimated Power | Your element's power while it is switched on, or 0. The unit reports no live power, voltage or current |
+| Timer State | Diagnostic: the off-peak channel's raw on/off value, with every raw value from the last poll |
 | Energy and Hours sensors | The newest metered day. Their `date` attribute says which day |
 | Scheduled Hours sensors | Diagnostic: hours the unit scheduled that day, for comparison with the actual hours |
+
+## Estimated power and heating
+
+Nothing about your element is assumed. Its power is learned from the unit's own meter, as a day's energy divided by the time the element ran, taking the middle value of the last 14 days that ran for at least 24 minutes, separately for off-peak and boost. Until there is such a day, Estimated Power reads unknown while the element is on. The `rating_source` attribute says where the figure comes from. To set it yourself, give `rating_watts` in a `secure_e7:` YAML block when the heater is first added. A stored value of 3000 from an earlier version was the old default, so it is dropped.
+
+Heating and Estimated Power say what the unit has switched on, not what the element is drawing. The unit does not report its thermostat, which usually cuts out well before the end of an off-peak window and then tops up now and again, so during a window both can read on while nothing is being used. The `basis` attribute is:
+
+- `hot_water`: a boost, or the boost programme
+- `timer_state`: the unit reports the off-peak channel on
+- `programme`: the time is inside today's off-peak window and the power is on
+- `power_off`, `idle` or `unknown`
+
+If the unit's Daylight Saving setting is off, its programme is taken to run on standard time. For accurate energy use the "Secure E7 Energy" statistic, which comes from the meter. Adding up Estimated Power over time reads high.
 
 ## Changing the schedule
 
