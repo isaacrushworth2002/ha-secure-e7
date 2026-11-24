@@ -1,4 +1,4 @@
-"""Element power learned from the unit's metered days, without Home Assistant.
+"""Element power and on-state, without Home Assistant.
 
 The unit reports no live power. Each metered day gives energy and the minutes
 the element actually ran, for off-peak and boost separately (a two-channel
@@ -9,7 +9,9 @@ from __future__ import annotations
 from datetime import timezone, tzinfo
 from statistics import median
 
+from .const import MODE_HOME, MODE_OFF
 from .consumption import row_date
+from .schedule import is_on_at
 
 PROGRAMMES = ("offpeak", "boost")
 # Run time is whole minutes, so shorter runs give too coarse a figure.
@@ -60,6 +62,34 @@ def learned_watts(samples: dict, programme: str) -> int | None:
 def typical_run_hours(samples: dict, programme: str) -> float | None:
     days = samples[programme].values()
     return round(median(hours for _, hours in days), 3) if days else None
+
+
+def heating_state(
+    hot_water_on: bool | None,
+    timer_state: int | None,
+    mode: int | None,
+    windows: list[dict] | None,
+    minute: int,
+) -> tuple[bool | None, str]:
+    """(whether the element is switched on, what says so).
+
+    On means powered: the thermostat may still have cut the element out, which
+    the unit does not report. `windows` is today's off-peak programme, or None
+    if it has not been read. None means it cannot be told.
+    """
+    if hot_water_on:
+        return True, "hot_water"
+    if mode == MODE_OFF:
+        return False, "power_off"
+    if timer_state == 1:
+        return True, "timer_state"
+    if windows is None:
+        return None, "unknown"
+    if not is_on_at(windows, minute):
+        return False, "idle"
+    # Timer state has not been seen to change on a real unit, so a 0 inside a
+    # window does not overrule the programme. What Away does to it is unknown.
+    return (True, "programme") if mode == MODE_HOME else (None, "unknown")
 
 
 def element_power(programme: str, configured: int | None, samples: dict) -> tuple[int | None, str]:

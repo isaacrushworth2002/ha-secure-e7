@@ -55,6 +55,32 @@ def test_short_and_empty_runs_are_not_measured():
     assert samples == {"offpeak": {}, "boost": {}}
 
 
+WINDOWS = [{"on": "02:15", "off": "06:00"}]
+
+
+@pytest.mark.parametrize(
+    ("hot_water", "timer", "mode", "windows", "minute", "expected"),
+    [
+        (True, 0, 2, WINDOWS, 720, (True, "hot_water")),
+        (True, 0, 0, None, 720, (True, "hot_water")),
+        (False, 1, 2, WINDOWS, 720, (True, "timer_state")),
+        (False, 1, 2, None, 720, (True, "timer_state")),
+        (False, 0, 2, WINDOWS, 135, (True, "programme")),
+        (False, None, 2, WINDOWS, 359, (True, "programme")),
+        (False, 0, 2, WINDOWS, 134, (False, "idle")),
+        (False, 0, 2, WINDOWS, 360, (False, "idle")),
+        (False, 0, 2, [], 200, (False, "idle")),
+        (False, 0, 2, [{"on": "22:00", "off": "24:00"}], 1439, (True, "programme")),
+        (False, 1, 0, WINDOWS, 200, (False, "power_off")),
+        (False, 0, 0, WINDOWS, 200, (False, "power_off")),
+        (False, 0, 1, WINDOWS, 200, (None, "unknown")),
+        (False, 0, 2, None, 200, (None, "unknown")),
+    ],
+)
+def test_heating_state(hot_water, timer, mode, windows, minute, expected):
+    assert power.heating_state(hot_water, timer, mode, windows, minute) == expected
+
+
 def test_a_configured_value_wins():
     samples = samples_from(row(1, (6.0, 2.0)))
     assert power.element_power("offpeak", 2000, samples) == (2000, "configured")

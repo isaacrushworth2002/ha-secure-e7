@@ -20,6 +20,9 @@ HI_GET_ALL = 3  # GetAllServiceValues (on BBServer)
 
 # DeviceCharacteristics ("I" inside a CharacteristicDTO)
 CH_HOTWATER_STATE = 4
+# On/off of the off-peak channel, on the same channel as DST (SI_TIMER). The app
+# shows it as that channel's On or Off and counts 1 as "boiler on".
+CH_TIMER_STATE = 5
 CH_MODE = 6
 CH_DST = 28              # DST_EnableDisable: clock follows daylight saving, on the BBServer channel (SI_TIMER)
 CH_DEVICE_LOCK = 30      # DeviceLock: front-panel lock

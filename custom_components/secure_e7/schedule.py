@@ -152,6 +152,11 @@ def encode_schedule(days: dict) -> list[dict]:
     return [slot for day in DAYS for slot in encoded[day]]
 
 
+def is_on_at(windows: list[dict], minute: int) -> bool:
+    """Whether a day's windows have the programme on at that minute of the day."""
+    return any(_minute_of(w["on"]) <= minute < _minute_of(w["off"]) for w in windows)
+
+
 def next_change(days: dict, weekday: int, minute: int) -> tuple[str, str] | None:
     """Next change in whether the programme is on after (weekday 0=Monday, minute
     of day), as ("HH:MM", "on" | "off"), looking up to a week ahead.

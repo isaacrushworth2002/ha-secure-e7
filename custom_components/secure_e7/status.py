@@ -9,6 +9,7 @@ from .const import (
     CH_NEXT_PERIOD,
     CH_NEXT_SETPOINT,
     CH_TIMED_BOOST,
+    CH_TIMER_STATE,
     MAX_TIME,
     OT_ADVANCE,
     SI_HOTWATER,
@@ -39,6 +40,7 @@ def parse_status(obj: dict) -> tuple[dict, int | None]:
         "next_change_state": None,
         "panel_lock": None,
         "dst": None,
+        "timer_state": None,
     }
     for ch in channels:
         si = ch.get("SI")
@@ -62,6 +64,9 @@ def parse_status(obj: dict) -> tuple[dict, int | None]:
             if nss is not None and nss.get("V") is not None:
                 state["next_change_state"] = "on" if nss.get("V") else "off"
         if si == SI_TIMER:
+            timer = chars.get(CH_TIMER_STATE)
+            if timer is not None:
+                state["timer_state"] = timer.get("V")
             for key, ch_id in (("panel_lock", CH_DEVICE_LOCK), ("dst", CH_DST)):
                 c = chars.get(ch_id)
                 if c is not None and c.get("V") is not None:

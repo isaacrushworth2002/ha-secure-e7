@@ -66,7 +66,14 @@ from .backoff import poll_interval
 from .consumption import latest_row, parse_consumption, row_date
 from .energy import KEEP_DAYS, gap_energy_wh, note_boost
 from .energy_statistics import async_import_daily_energy
-from .power import element_power, learned_watts, load_samples, update_samples
+from .power import (
+    element_power,
+    heating_state,
+    learned_watts,
+    load_samples,
+    typical_run_hours,
+    update_samples,
+)
 from .resilience import PendingWrite, PollHealth, with_retries
 from .protocol import (
     Reassembler,
@@ -126,6 +133,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._hw_boi: int | None = None  # hot-water channel business-object id
         self._energy_wh = 0.0  # estimated, integrated while the element is on
         self._last_energy_ts: float | None = None
+        self._offpeak_credit: tuple = (None, 0.0)  # date, Wh credited to its off-peak run
         self._poll_count = 0
         # Survives a reload, so failed handshakes at setup add up across retries.
         self._auth_counts: dict = hass.data.setdefault(DOMAIN, {}).setdefault("auth_failures", {})
@@ -353,11 +361,11 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         obj = await self._request(HI_GET_ALL, SI_BBSERVER)
         _LOGGER.debug("secure_e7 GetAllServiceValues raw: %s", obj)
         state = self._pending_write.apply(self._parse_status(obj), time.monotonic())
-        watts, _ = element_power("boost", self._rating_watts, self._power_samples)
-        self._integrate_energy(state.get("hot_water_on"), watts)
         self._note_boost(bool(state.get("boost_minutes_remaining")))
+        state = self._derive(self._with_cached(state))
+        self._integrate_energy(state)
         state["estimated_energy_kwh"] = round(self._energy_wh / 1000.0, 3)
-        return self._derive(self._with_cached(state))
+        return state
 
     def _publish(self, data: dict) -> None:
         """Show new data without calling the poll good, which async_set_updated_data would.
@@ -368,18 +376,35 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self.async_update_listeners()
 
     def _derive(self, state: dict) -> dict:
-        """Add the estimated power, which depends on the state and on what has been learned."""
+        """Add whether the element is on and the estimated power that goes with it."""
         samples = self._power_samples
-        on = state.get("hot_water_on")
-        watts, source = element_power("boost", self._rating_watts, samples)
-        state["estimated_power"] = None if on is None else watts if on else 0
+        now = dt_util.now()
+        schedule = state.get("schedule")
+        heating, basis = heating_state(
+            state.get("hot_water_on"),
+            state.get("timer_state"),
+            state.get("mode"),
+            None if schedule is None else schedule["days"].get(DAYS[now.weekday()]) or [],
+            now.hour * 60 + now.minute,
+        )
+        programme = "boost" if basis == "hot_water" else "offpeak"
+        watts, source = element_power(programme, self._rating_watts, samples)
+        cut_out_unknown = heating is True
+        state["heating"] = heating
+        state["heating_info"] = {
+            "basis": basis,
+            "thermostat_may_have_cut_out": cut_out_unknown,
+        }
+        state["estimated_power"] = None if heating is None else watts if heating else 0
         state["power_info"] = {
+            **state["heating_info"],
             "element_watts": watts,
             "rating_source": source,
             "learned_offpeak_watts": learned_watts(samples, "offpeak"),
             "learned_boost_watts": learned_watts(samples, "boost"),
             "offpeak_days_used": len(samples["offpeak"]),
             "boost_days_used": len(samples["boost"]),
+            "typical_offpeak_run_hours": typical_run_hours(samples, "offpeak"),
         }
         return state
 
@@ -636,13 +661,34 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             return
         self._imported = key
 
-    def _integrate_energy(self, on: bool | None, watts: int | None) -> None:
+    def _integrate_energy(self, state: dict) -> None:
         now = time.monotonic()
         if self._last_energy_ts is not None:
-            self._energy_wh += gap_energy_wh(
-                on, watts or 0, now - self._last_energy_ts, MAX_ENERGY_GAP_SECONDS
+            wh = gap_energy_wh(
+                state["heating"],
+                state["estimated_power"] or 0,
+                now - self._last_energy_ts,
+                MAX_ENERGY_GAP_SECONDS,
             )
+            if wh and state["heating_info"]["basis"] != "hot_water":
+                wh = self._cap_offpeak(wh, state["estimated_power"])
+            self._energy_wh += wh
         self._last_energy_ts = now
+
+    def _cap_offpeak(self, wh: float, watts: int) -> float:
+        """The thermostat cuts out part way through a window, so credit a day's
+        off-peak no more than the element usually runs.
+        """
+        typical = typical_run_hours(self._power_samples, "offpeak")
+        if typical is None:
+            return wh
+        today = dt_util.now().date()
+        day, used = self._offpeak_credit
+        if day != today:
+            used = 0.0
+        wh = min(wh, max(typical * watts - used, 0.0))
+        self._offpeak_credit = (today, used + wh)
+        return wh
 
     def _parse_status(self, obj: dict) -> dict:
         state, hw_boi = parse_status(obj)

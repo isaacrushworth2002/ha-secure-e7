@@ -1,4 +1,4 @@
-"""Binary sensor: live immersion element state."""
+"""Binary sensors: whether the element is switched on, and device settings."""
 from __future__ import annotations
 
 from homeassistant.components.binary_sensor import (
@@ -33,7 +33,11 @@ class HeatingBinarySensor(SecureE7Entity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
-        return (self.coordinator.data or {}).get("hot_water_on")
+        return (self.coordinator.data or {}).get("heating")
+
+    @property
+    def extra_state_attributes(self):
+        return (self.coordinator.data or {}).get("heating_info")
 
 
 class DiagnosticBinarySensor(SecureE7Entity, BinarySensorEntity):
