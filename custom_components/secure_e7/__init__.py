@@ -155,7 +155,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: SecureE7ConfigEntry) -> 
         boost_minutes=data.get(CONF_BOOST_MINUTES, DEFAULT_BOOST_MINUTES),
         rating_watts=data.get(CONF_RATING_WATTS),
     )
-    await coordinator.async_config_entry_first_refresh()
+    entry.async_on_unload(coordinator.async_listen_for_heater())
+    # Not async_config_entry_first_refresh: an unreachable heater would leave the
+    # retries to Home Assistant's setup backoff, which nothing can cut short. The
+    # coordinator retries itself and entities are unavailable until a poll works.
+    await coordinator.async_refresh()
     entry.runtime_data = coordinator
     await er.async_migrate_entries(
         hass, entry.entry_id, _migrate_entity(er.async_get(hass))

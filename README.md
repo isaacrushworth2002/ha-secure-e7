@@ -87,7 +87,7 @@ An empty list means off all day. The unit allows up to 3 on-times a day, in 15-m
 
 ## If it goes unavailable
 
-The heater is reached over Bluetooth, which is not always reliable. If it can't be reached, the integration retries every minute at first, then backs off to every 10 minutes so the proxy isn't kept busy, and recovers by itself once the heater is reachable again.
+The heater is reached over Bluetooth, which is not always reliable. If it can't be reached, the integration retries every minute at first, then backs off to every 5 minutes so the proxy isn't kept busy, and recovers by itself once the heater is reachable again. If the heater is heard advertising while polls are failing, it tries again straight away, at most once every 5 minutes. While it has never been reached since a restart, its entities show as unavailable.
 
 If it stays unavailable for a long time, check your Bluetooth proxy. If the proxy isn't seeing any Bluetooth devices at all, restarting it usually fixes it, and keeping its ESPHome firmware up to date helps.
 
