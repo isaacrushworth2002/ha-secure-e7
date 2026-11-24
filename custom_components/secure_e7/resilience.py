@@ -13,24 +13,31 @@ class PollHealth:
 
     def __init__(self, auth_failures: int = 0) -> None:
         self.failures = 0
+        self.backoff_failures = 0  # those since the backoff last started over
         self.last_success: float | None = None
         self.auth_failures = auth_failures
 
     def success(self, now: float) -> int:
         """Record a good poll and return how many failed before it."""
         missed, self.failures, self.auth_failures = self.failures, 0, 0
+        self.backoff_failures = 0
         self.last_success = now
         return missed
 
     def failure(self, now: float, auth: bool = False) -> bool:
         """Record a failed poll; True if the last good data may still be served."""
         self.failures += 1
+        self.backoff_failures += 1
         self.auth_failures = self.auth_failures + 1 if auth else 0
         return (
             self.last_success is not None
             and self.failures <= MAX_STALE_FAILURES
             and now - self.last_success <= MAX_STALE_SECONDS
         )
+
+    def restart_backoff(self) -> None:
+        """Poll at the normal rate again without forgetting that polls are failing."""
+        self.backoff_failures = 0
 
     @property
     def reauth_needed(self) -> bool:

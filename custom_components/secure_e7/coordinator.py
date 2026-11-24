@@ -21,7 +21,7 @@ from bleak_retry_connector import establish_connection
 
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
@@ -63,7 +63,7 @@ from .const import (
     WRITE_RETRIES,
     WRITE_SETTLE_SECONDS,
 )
-from .backoff import poll_interval
+from .backoff import ADVERT_RETRY_SECONDS, poll_interval
 from .consumption import latest_row, parse_consumption, row_date
 from .energy import KEEP_DAYS, gap_energy_wh, note_boost
 from .energy_statistics import async_import_daily_energy
@@ -151,6 +151,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._health = PollHealth(self._auth_counts.get(entry.entry_id, 0))
         self.last_success = None  # datetime of the last good poll
         self._poll_seconds = SCAN_INTERVAL_SECONDS
+        self._advert_retry: float | None = None
         self._consumption: list[dict] = []  # cached daily metered history
         self._consumption_logged = False
         self._imported: tuple | None = None  # rows, programme and boosts last sent to statistics
@@ -355,7 +356,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             return await self._poll()
 
     def _set_poll_interval(self) -> None:
-        seconds = poll_interval(self._health.failures, SCAN_INTERVAL_SECONDS)
+        seconds = poll_interval(self._health.backoff_failures, SCAN_INTERVAL_SECONDS)
         if seconds != self._poll_seconds:
             self._poll_seconds = seconds
             if seconds != SCAN_INTERVAL_SECONDS:
@@ -366,6 +367,32 @@ class SecureE7Coordinator(DataUpdateCoordinator):
                     seconds,
                 )
             self.update_interval = timedelta(seconds=seconds)
+
+    @callback
+    def async_listen_for_heater(self) -> CALLBACK_TYPE:
+        """Hear the heater advertise; returns the function that stops listening."""
+        return bluetooth.async_register_callback(
+            self.hass,
+            self._heater_heard,
+            bluetooth.BluetoothCallbackMatcher(address=self._mac, connectable=True),
+            bluetooth.BluetoothScanningMode.PASSIVE,
+        )
+
+    @callback
+    def _heater_heard(self, *_) -> None:
+        """While polls are failing, try again now instead of waiting out the backoff."""
+        if not self._health.failures or self._health.reauth_needed or self._lock.locked():
+            return
+        now = time.monotonic()
+        if self._advert_retry is not None and now - self._advert_retry < ADVERT_RETRY_SECONDS:
+            return
+        self._advert_retry = now
+        _LOGGER.info("secure_e7 %s heard again, trying now", self._mac)
+        self._health.restart_backoff()
+        self._set_poll_interval()
+        self.config_entry.async_create_background_task(
+            self.hass, self.async_request_refresh(), f"{DOMAIN} {self._mac} retry"
+        )
 
     async def _poll(self) -> dict:
         """One GetAll request; the caller holds the session."""

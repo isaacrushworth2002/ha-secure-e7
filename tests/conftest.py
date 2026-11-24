@@ -122,7 +122,12 @@ def _ha_stubs():
         ),
         _module("homeassistant.config_entries", ConfigEntry=ConfigEntry),
         _module("homeassistant.const", UnitOfEnergy=types.SimpleNamespace(KILO_WATT_HOUR="kWh")),
-        _module("homeassistant.core", HomeAssistant=object, callback=lambda f: f),
+        _module(
+            "homeassistant.core",
+            CALLBACK_TYPE=object,
+            HomeAssistant=object,
+            callback=lambda f: f,
+        ),
         _module(
             "homeassistant.exceptions",
             ConfigEntryAuthFailed=ConfigEntryAuthFailed,
@@ -167,9 +172,15 @@ def coordinator_env(monkeypatch):
 
 
 def make_coordinator(env, hass=None, rating_watts=None, **kwargs):
-    entry = types.SimpleNamespace(entry_id="entry1")
+    hass = hass or FakeHass()
+    entry = types.SimpleNamespace(
+        entry_id="entry1",
+        async_create_background_task=lambda h, coro, name: h.async_create_background_task(
+            coro, name
+        ),
+    )
     return env.module.SecureE7Coordinator(
-        hass or FakeHass(),
+        hass,
         entry,
         mac="AA:BB:CC:DD:EE:FF",
         key=bytes(16),
