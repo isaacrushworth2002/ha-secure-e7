@@ -46,6 +46,7 @@ async def async_setup_entry(hass, entry, async_add_entities: AddEntitiesCallback
                 coordinator, "hours_scheduled_offpeak", "Off-Peak Hours Scheduled", diagnostic=True
             ),
             ScheduleSensor(coordinator),
+            TimerStateSensor(coordinator),
             LastSuccessSensor(coordinator),
         ]
     )
@@ -210,6 +211,24 @@ class ScheduleSensor(SecureE7Entity, SensorEntity):
     def extra_state_attributes(self):
         sched = self._schedule
         return None if sched is None else dict(sched["days"])
+
+
+class TimerStateSensor(SecureE7Entity, SensorEntity):
+    """The off-peak channel's TimerState as sent, with the other raw values."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:electric-switch"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "timer_state", "Timer State")
+
+    @property
+    def native_value(self):
+        return (self.coordinator.data or {}).get("timer_state")
+
+    @property
+    def extra_state_attributes(self):
+        return {"characteristics": (self.coordinator.data or {}).get("characteristics")}
 
 
 class LastSuccessSensor(SecureE7Entity, SensorEntity):

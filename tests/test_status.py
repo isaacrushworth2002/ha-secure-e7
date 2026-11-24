@@ -95,6 +95,12 @@ def test_timer_state_is_read_from_the_timer_channel():
     assert status.parse_status({"R": {"V": []}})[0]["timer_state"] is None
 
 
+def test_raw_characteristics_are_keyed_by_service_object_and_id():
+    reply = {"R": {"V": [{"SI": 16, "I": 2, "V": [{"I": 4, "V": 1, "OT": 2, "D": 30}]}]}}
+    assert status.raw_characteristics(reply) == {"16.2.4": {"V": 1, "OT": 2, "D": 30}}
+    assert status.raw_characteristics({}) == {}
+
+
 def test_missing_settings_are_unknown_not_a_failed_poll():
     state, _ = status.parse_status(reply())
     assert state["dst"] is None

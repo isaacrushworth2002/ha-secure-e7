@@ -12,6 +12,7 @@ import json
 import logging
 import secrets
 import time
+from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -84,7 +85,7 @@ from .protocol import (
     rpc,
     unframe,
 )
-from .status import IncompleteStatus, complete_status, parse_status
+from .status import IncompleteStatus, complete_status, parse_status, raw_characteristics
 from .schedule import DAYS, encode_days, next_change, parse_schedule, read_slots, splice
 
 _LOGGER = logging.getLogger(__name__)
@@ -134,6 +135,8 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._energy_wh = 0.0  # estimated, integrated while the element is on
         self._last_energy_ts: float | None = None
         self._offpeak_credit: tuple = (None, 0.0)  # date, Wh credited to its off-peak run
+        self._characteristics: dict = {}
+        self.characteristic_changes: deque = deque(maxlen=200)  # for diagnostics
         self._poll_count = 0
         # Survives a reload, so failed handshakes at setup add up across retries.
         self._auth_counts: dict = hass.data.setdefault(DOMAIN, {}).setdefault("auth_failures", {})
@@ -361,11 +364,28 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         obj = await self._request(HI_GET_ALL, SI_BBSERVER)
         _LOGGER.debug("secure_e7 GetAllServiceValues raw: %s", obj)
         state = self._pending_write.apply(self._parse_status(obj), time.monotonic())
+        state["characteristics"] = self._note_characteristics(raw_characteristics(obj))
         self._note_boost(bool(state.get("boost_minutes_remaining")))
         state = self._derive(self._with_cached(state))
         self._integrate_energy(state)
         state["estimated_energy_kwh"] = round(self._energy_wh / 1000.0, 3)
         return state
+
+    def _note_characteristics(self, raw: dict) -> dict:
+        """Record the raw values whenever any of them change."""
+        old = self._characteristics
+        changed = {
+            key: [old.get(key), raw.get(key)]
+            for key in sorted({*old, *raw})
+            if old.get(key) != raw.get(key)
+        }
+        if changed:
+            self._characteristics = raw
+            self.characteristic_changes.append(
+                {"at": dt_util.now().isoformat(), "changed": changed}
+            )
+            _LOGGER.debug("secure_e7 characteristics changed: %s; now %s", changed, raw)
+        return raw
 
     def _publish(self, data: dict) -> None:
         """Show new data without calling the poll good, which async_set_updated_data would.

@@ -76,6 +76,17 @@ def parse_status(obj: dict) -> tuple[dict, int | None]:
     return state, hw_boi
 
 
+def raw_characteristics(obj: dict) -> dict:
+    """Every characteristic in the reply as sent, keyed "service.object.characteristic"."""
+    res = obj.get("R") or {}
+    channels = res.get("V", []) if isinstance(res, dict) else []
+    return {
+        f"{ch.get('SI')}.{ch.get('I')}.{c.get('I')}": {k: v for k, v in c.items() if k != "I"}
+        for ch in channels
+        for c in ch.get("V", [])
+    }
+
+
 def complete_status(state: dict, last: dict | None) -> dict:
     """Fill mode and timed_boost from the last state; raise if any required value is missing."""
     for key in CARRIED:

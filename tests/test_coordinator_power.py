@@ -103,6 +103,29 @@ def test_no_energy_is_credited_while_the_power_is_unknown(coordinator_env, monke
     assert c._energy_wh == 0
 
 
+def test_raw_values_are_recorded_only_when_they_change(coordinator_env, caplog):
+    c = make_coordinator(coordinator_env)
+    value = [0]
+
+    async def request(hi, si, args=None):
+        channels = [
+            {"SI": 33, "I": 1, "V": [{"I": 6, "V": 2}, {"I": 5, "V": value[0]}]},
+            {"SI": 16, "I": 2, "V": [{"I": 4, "V": 0}]},
+        ]
+        return {"R": {"V": channels}}
+
+    c._request = request
+    caplog.set_level("DEBUG")
+    asyncio.run(c._poll())
+    asyncio.run(c._poll())
+    value[0] = 1
+    data = asyncio.run(c._poll())
+    assert data["timer_state"] == 1 and data["characteristics"]["33.1.5"] == {"V": 1}
+    assert len(c.characteristic_changes) == 2
+    assert c.characteristic_changes[-1]["changed"] == {"33.1.5": [{"V": 0}, {"V": 1}]}
+    assert caplog.text.count("characteristics changed") == 2
+
+
 def test_learned_power_comes_back_after_a_restart(coordinator_env):
     c = make_coordinator(coordinator_env)
     c._learn_power(ROWS)

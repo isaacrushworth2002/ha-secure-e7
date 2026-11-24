@@ -18,4 +18,5 @@ async def async_get_config_entry_diagnostics(
         "failed_polls_in_a_row": coordinator._health.failures,
         "poll_interval_seconds": coordinator._poll_seconds,
         "data": redact(coordinator.data),
+        "characteristic_changes": list(coordinator.characteristic_changes),
     }
