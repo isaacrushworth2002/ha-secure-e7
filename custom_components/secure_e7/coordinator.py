@@ -422,11 +422,10 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         )
         programme = "boost" if basis == "hot_water" else "offpeak"
         watts, source = element_power(programme, self._rating_watts, samples)
-        cut_out_unknown = heating is True
         state["heating"] = heating
         state["heating_info"] = {
             "basis": basis,
-            "thermostat_may_have_cut_out": cut_out_unknown,
+            "thermostat_may_have_cut_out": heating is True,
         }
         state["estimated_power"] = None if heating is None else watts if heating else 0
         state["power_info"] = {
