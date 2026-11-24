@@ -166,7 +166,7 @@ def coordinator_env(monkeypatch):
         del sys.modules[name]
 
 
-def make_coordinator(env, hass=None, **kwargs):
+def make_coordinator(env, hass=None, rating_watts=None, **kwargs):
     entry = types.SimpleNamespace(entry_id="entry1")
     return env.module.SecureE7Coordinator(
         hass or FakeHass(),
@@ -175,6 +175,6 @@ def make_coordinator(env, hass=None, **kwargs):
         key=bytes(16),
         gmi="1",
         boost_minutes=60,
-        rating_watts=3000,
+        rating_watts=rating_watts,
         **kwargs,
     )

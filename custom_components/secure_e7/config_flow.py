@@ -29,6 +29,7 @@ _KEY_CHARS = set("0123456789abcdef")
 
 class SecureE7ConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
         self._address: str | None = None

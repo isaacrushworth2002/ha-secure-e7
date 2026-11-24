@@ -2,9 +2,9 @@
 and REAL metered daily energy (from the device's DynamicTariff consumption path).
 
 Per-day metered figures are boost/off-peak amp-hours the device accumulates,
-converted to kWh with a nominal 230 V (exactly as the vendor app does). Estimated
-live power (rating x on/off) is kept only as a between-days live proxy, since the
-device reports energy daily, not instantaneously.
+converted to kWh with a nominal 230 V (exactly as the vendor app does). Estimated live power
+(element power x on/off, see power.py) is a proxy, since the device reports
+energy daily, not instantaneously.
 """
 from __future__ import annotations
 
@@ -112,6 +112,10 @@ class EstimatedPowerSensor(SecureE7Entity, SensorEntity):
     @property
     def native_value(self):
         return (self.coordinator.data or {}).get("estimated_power")
+
+    @property
+    def extra_state_attributes(self):
+        return (self.coordinator.data or {}).get("power_info")
 
 
 class EnergyTodaySensor(SecureE7Entity, SensorEntity):

@@ -5,6 +5,14 @@ from conftest import load
 migration = load("migration")
 
 
+def test_the_old_default_rating_is_dropped_and_any_other_kept():
+    old = {"mac": "AA", "rating_watts": 3000}
+    assert migration.without_default_rating(old) == {"mac": "AA"}
+    assert migration.without_default_rating({"rating_watts": 2000}) == {"rating_watts": 2000}
+    assert migration.without_default_rating({"mac": "AA"}) == {"mac": "AA"}
+    assert old["rating_watts"] == 3000
+
+
 def test_follow_schedule_unique_id_becomes_timed_boost():
     assert migration.renamed_unique_id("AA:BB:CC:11:22:33_follow_schedule") == "AA:BB:CC:11:22:33_timed_boost"
 

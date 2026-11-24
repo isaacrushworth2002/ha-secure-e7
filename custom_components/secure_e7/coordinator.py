@@ -66,6 +66,7 @@ from .backoff import poll_interval
 from .consumption import latest_row, parse_consumption, row_date
 from .energy import KEEP_DAYS, gap_energy_wh, note_boost
 from .energy_statistics import async_import_daily_energy
+from .power import element_power, learned_watts, load_samples, update_samples
 from .resilience import PendingWrite, PollHealth, with_retries
 from .protocol import (
     Reassembler,
@@ -104,7 +105,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         key: bytes,
         gmi: str,
         boost_minutes: int,
-        rating_watts: int,
+        rating_watts: int | None,
     ) -> None:
         super().__init__(
             hass,
@@ -117,7 +118,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._key = key
         self._gmi = gmi
         self.boost_minutes = boost_minutes
-        self._rating_watts = rating_watts
+        self._rating_watts = rating_watts or None  # optional override
         self._client = None
         self._conn_logged = False
         self._rx = Reassembler()
@@ -137,6 +138,9 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._boosts: list[list] = []  # [start, end] timestamps of boosts seen in polls
         self._boost_store = Store(hass, 1, f"{DOMAIN}_boosts_{mac.replace(':', '').lower()}")
         self._boosts_loaded = False
+        self._power_samples = load_samples(None)
+        self._power_store = Store(hass, 1, f"{DOMAIN}_power_{mac.replace(':', '').lower()}")
+        self._power_loaded = False
         self._programmes: dict[str, list] = {}  # ISO date -> that day's windows when first seen
         self._schedule: dict | None = None
         self._schedule_raw: str | None = None  # parsed weekly programme
@@ -295,6 +299,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
 
     # ---- polling -----------------------------------------------------------
     async def _async_update_data(self) -> dict:
+        await self._load_power()
         try:
             state = await with_retries(
                 self._poll_once, POLL_RETRIES, UpdateFailed, DeviceUnreachable
@@ -348,21 +353,50 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         obj = await self._request(HI_GET_ALL, SI_BBSERVER)
         _LOGGER.debug("secure_e7 GetAllServiceValues raw: %s", obj)
         state = self._pending_write.apply(self._parse_status(obj), time.monotonic())
-        self._integrate_energy(state.get("hot_water_on"))
+        watts, _ = element_power("boost", self._rating_watts, self._power_samples)
+        self._integrate_energy(state.get("hot_water_on"), watts)
         self._note_boost(bool(state.get("boost_minutes_remaining")))
-        state["estimated_power"] = (
-            self._rating_watts if state.get("hot_water_on") else 0
-        )
         state["estimated_energy_kwh"] = round(self._energy_wh / 1000.0, 3)
-        return self._with_cached(state)
+        return self._derive(self._with_cached(state))
 
     def _publish(self, data: dict) -> None:
         """Show new data without calling the poll good, which async_set_updated_data would.
 
         Entities stay unavailable through an outage until a real poll succeeds.
         """
-        self.data = data
+        self.data = self._derive(data)
         self.async_update_listeners()
+
+    def _derive(self, state: dict) -> dict:
+        """Add the estimated power, which depends on the state and on what has been learned."""
+        samples = self._power_samples
+        on = state.get("hot_water_on")
+        watts, source = element_power("boost", self._rating_watts, samples)
+        state["estimated_power"] = None if on is None else watts if on else 0
+        state["power_info"] = {
+            "element_watts": watts,
+            "rating_source": source,
+            "learned_offpeak_watts": learned_watts(samples, "offpeak"),
+            "learned_boost_watts": learned_watts(samples, "boost"),
+            "offpeak_days_used": len(samples["offpeak"]),
+            "boost_days_used": len(samples["boost"]),
+        }
+        return state
+
+    async def _load_power(self) -> None:
+        if self._power_loaded:
+            return
+        try:
+            saved = await self._power_store.async_load()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("secure_e7 learned power not read: %r", err)
+            saved = None
+        self._power_samples = load_samples(saved)
+        self._power_loaded = True
+
+    def _learn_power(self, days: list[dict]) -> None:
+        if update_samples(self._power_samples, days, dt_util.DEFAULT_TIME_ZONE):
+            self._power_store.async_delay_save(lambda: dict(self._power_samples), 10)
 
     def _with_cached(self, state: dict) -> dict:
         """Add the slowly read consumption and schedule, as last cached."""
@@ -416,6 +450,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             self._consumption_read = True
             if days:
                 self._consumption = days
+                self._learn_power(days)
                 if not self._consumption_logged:
                     _LOGGER.info("secure_e7 metered consumption (raw): %s", days)
                     self._consumption_logged = True
@@ -601,11 +636,11 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             return
         self._imported = key
 
-    def _integrate_energy(self, on: bool | None) -> None:
+    def _integrate_energy(self, on: bool | None, watts: int | None) -> None:
         now = time.monotonic()
         if self._last_energy_ts is not None:
             self._energy_wh += gap_energy_wh(
-                on, self._rating_watts, now - self._last_energy_ts, MAX_ENERGY_GAP_SECONDS
+                on, watts or 0, now - self._last_energy_ts, MAX_ENERGY_GAP_SECONDS
             )
         self._last_energy_ts = now
 

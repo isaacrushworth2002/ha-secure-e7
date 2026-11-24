@@ -72,8 +72,8 @@ SERVICE_SET_SCHEDULE = "set_schedule"
 # Fetch consumption far less often than live state (rows are whole days)
 CONSUMPTION_EVERY_N_POLLS = 30   # ~30 min at a 60 s poll
 
-# The estimated power/energy below is a live-today fallback for the gap between
-# daily consumption rows; real per-day kWh comes from the DynamicTariff path.
+# Estimated power and energy are a live-today fallback for the gap between daily
+# consumption rows (see power.py); real per-day kWh comes from DynamicTariff.
 
 # OverrideType ("OT")
 OT_NONE = 0
@@ -98,7 +98,6 @@ CONF_RATING_WATTS = "rating_watts"
 
 DEFAULT_BOOST_MINUTES = 60
 ALLOWED_BOOST_MINUTES = (30, 60, 120)
-DEFAULT_RATING_WATTS = 3000  # typical UK immersion element; change to match yours
 
 SCAN_INTERVAL_SECONDS = 60
 # Longer than this since the last good poll and the heater state is unknown

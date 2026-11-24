@@ -26,14 +26,13 @@ from .const import (
     CONF_MAC,
     CONF_RATING_WATTS,
     DEFAULT_BOOST_MINUTES,
-    DEFAULT_RATING_WATTS,
     DOMAIN,
     PLATFORMS,
     SERVICE_GET_SCHEDULE,
     SERVICE_SET_SCHEDULE,
 )
 from .coordinator import SecureE7ConfigEntry, SecureE7Coordinator
-from .migration import migration_target
+from .migration import migration_target, without_default_rating
 from .schedule import DAYS, encode_days
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,9 +49,7 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(
                     CONF_BOOST_MINUTES, default=DEFAULT_BOOST_MINUTES
                 ): vol.In(ALLOWED_BOOST_MINUTES),
-                vol.Optional(
-                    CONF_RATING_WATTS, default=DEFAULT_RATING_WATTS
-                ): cv.positive_int,
+                vol.Optional(CONF_RATING_WATTS): cv.positive_int,
             }
         )
     },
@@ -137,6 +134,16 @@ def _migrate_entity(registry: er.EntityRegistry):
     return migrate
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: SecureE7ConfigEntry) -> bool:
+    if entry.version > 1:
+        return False
+    if entry.minor_version < 2:
+        hass.config_entries.async_update_entry(
+            entry, data=without_default_rating(entry.data), minor_version=2
+        )
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: SecureE7ConfigEntry) -> bool:
     data = entry.data
     coordinator = SecureE7Coordinator(
@@ -146,7 +153,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SecureE7ConfigEntry) -> 
         key=bytes.fromhex(data[CONF_KEY]),
         gmi=str(data[CONF_GMI]),
         boost_minutes=data.get(CONF_BOOST_MINUTES, DEFAULT_BOOST_MINUTES),
-        rating_watts=data.get(CONF_RATING_WATTS, DEFAULT_RATING_WATTS),
+        rating_watts=data.get(CONF_RATING_WATTS),
     )
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
