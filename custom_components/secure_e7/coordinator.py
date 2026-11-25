@@ -186,7 +186,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
                 )
                 is not None
             )
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "secure_e7 %s not reachable: connectable_scanners=%d seen_in_passive_scan=%s",
                 self._mac,
                 scanners,

@@ -48,7 +48,7 @@ The unit keeps two programmes. The off-peak programme is the daily window that h
 | Timed Boost switch | Turns the boost programme on or off. It does not stop the off-peak run, so switching it off will not stop the heater at 02:15 |
 | Schedule sensor and `set_schedule` | Read and write the off-peak programme |
 | Next Change Time and State | The next on or off edge of the off-peak programme, from the schedule read, in the unit's local time |
-| Heating | Whether the element is switched on, by a boost or by the off-peak programme. The `basis` attribute says which |
+| Heating | Whether the element is switched on, by a boost or by the off-peak channel. The `basis` attribute says how it is known |
 | Panel Lock | Diagnostic: whether the front panel is locked |
 | Daylight Saving | Diagnostic: whether the heater clock follows daylight saving |
 | Estimated Power | Your element's power while it is switched on, or 0. The unit reports no live power, voltage or current |
@@ -63,8 +63,8 @@ Nothing about your element is assumed. Its power is learned from the unit's own 
 Heating and Estimated Power say what the unit has switched on, not what the element is drawing. The unit does not report its thermostat, which usually cuts out well before the end of an off-peak window and then tops up now and again, so during a window both can read on while nothing is being used. The `basis` attribute is:
 
 - `hot_water`: a boost, or the boost programme
-- `timer_state`: the unit reports the off-peak channel on
-- `programme`: the time is inside today's off-peak window and the power is on
+- `timer_state`: the unit's own on/off value for the off-peak channel
+- `programme`: the unit sent no timer state, the time is inside today's off-peak window and the power is on
 - `power_off`, `idle` or `unknown`
 
 If the unit's Daylight Saving setting is off, its programme is taken to run on standard time. For accurate energy use the "Secure E7 Energy" statistic, which comes from the meter. Adding up Estimated Power over time reads high.

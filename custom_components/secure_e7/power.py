@@ -74,21 +74,21 @@ def heating_state(
     """(whether the element is switched on, what says so).
 
     On means powered: the thermostat may still have cut the element out, which
-    the unit does not report. `windows` is today's off-peak programme, or None
-    if it has not been read. None means it cannot be told.
+    the unit does not report. The timer state is the unit's own on/off for the
+    off-peak channel; `windows`, today's off-peak programme (None if not read),
+    stands in when a reply has no timer state. None means it cannot be told.
     """
     if hot_water_on:
         return True, "hot_water"
     if mode == MODE_OFF:
         return False, "power_off"
-    if timer_state == 1:
-        return True, "timer_state"
+    if timer_state in (0, 1):
+        return bool(timer_state), "timer_state"
     if windows is None:
         return None, "unknown"
     if not is_on_at(windows, minute):
         return False, "idle"
-    # Timer state has not been seen to change on a real unit, so a 0 inside a
-    # window does not overrule the programme. What Away does to it is unknown.
+    # What Away does to the programme is unknown.
     return (True, "programme") if mode == MODE_HOME else (None, "unknown")
 
 

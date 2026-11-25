@@ -45,7 +45,7 @@ def at(env, hour, minute=0):
 
 def state(**changes):
     schedule = {"days": {"saturday": [{"on": "02:15", "off": "06:00"}]}}
-    return {"hot_water_on": False, "mode": 2, "timer_state": 0, "schedule": schedule, **changes}
+    return {"hot_water_on": False, "mode": 2, "timer_state": None, "schedule": schedule, **changes}
 
 
 def test_the_off_peak_run_shows_power_although_hot_water_reads_off(coordinator_env):
@@ -59,6 +59,17 @@ def test_the_off_peak_run_shows_power_although_hot_water_reads_off(coordinator_e
     at(coordinator_env, 12)
     data = c._derive(state())
     assert data["heating"] is False and data["estimated_power"] == 0
+
+
+def test_the_timer_state_overrules_the_programme(coordinator_env):
+    c = make_coordinator(coordinator_env)
+    c._learn_power(ROWS)
+    at(coordinator_env, 3)
+    data = c._derive(state(timer_state=0))
+    assert data["heating"] is False and data["estimated_power"] == 0
+    at(coordinator_env, 12)
+    data = c._derive(state(timer_state=1))
+    assert data["estimated_power"] == 2956 and data["power_info"]["basis"] == "timer_state"
 
 
 def test_a_unit_without_daylight_saving_runs_an_hour_later_in_summer(coordinator_env):
