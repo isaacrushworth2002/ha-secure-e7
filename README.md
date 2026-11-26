@@ -16,7 +16,7 @@ Handy if you're on Economy 7 or a flexible tariff and want to heat water in the 
 
 ## What you need
 
-- Home Assistant 2024.1 or newer
+- Home Assistant 2025.11 or newer
 - Bluetooth that can reach the heater. Either the Home Assistant machine has Bluetooth and is close enough, or you have an [ESPHome Bluetooth proxy](https://esphome.io/components/bluetooth_proxy.html) near the heater. A cheap ESP32 does the job and is the usual answer.
 
 ## Install
@@ -58,7 +58,7 @@ The unit keeps two programmes. The off-peak programme is the daily window that h
 
 ## Estimated power and heating
 
-Nothing about your element is assumed. Its power is learned from the unit's own meter, as a day's energy divided by the time the element ran, taking the middle value of the last 14 days that ran for at least 24 minutes, separately for off-peak and boost. Until there is such a day, Estimated Power reads unknown while the element is on. The `rating_source` attribute says where the figure comes from. To set it yourself, give `rating_watts` in a `secure_e7:` YAML block when the heater is first added. A stored value of 3000 from an earlier version was the old default, so it is dropped.
+Nothing about your element is assumed. Its power is learned from the unit's own meter, as a day's energy divided by the time the element ran, taking the middle value of the last 14 days that ran for at least 24 minutes, separately for off-peak and boost. Until one of the two has such a day it uses the other's figure, and until either does, Estimated Power reads unknown while the element is on. The `rating_source` attribute says where the figure comes from. To set it yourself, give `rating_watts` in a `secure_e7:` YAML block when the heater is first added. A stored value of 3000 from an earlier version was the old default, so it is dropped.
 
 Heating and Estimated Power say what the unit has switched on, not what the element is drawing. The unit does not report its thermostat, which usually cuts out well before the end of an off-peak window and then tops up now and again, so during a window both can read on while nothing is being used. The `basis` attribute is:
 
@@ -93,10 +93,10 @@ If it stays unavailable for a long time, check your Bluetooth proxy. If the prox
 
 ## Notes
 
-- To use the energy in the Energy dashboard, add the statistic "Secure E7 Energy" (not the Energy Today sensor) as an individual device. The unit only meters whole days, so the hours are worked out. Off-peak kWh is placed from the start of that weekday's window for as many minutes as the element actually ran, which matches the real burn when the thermostat keeps the element on until the cylinder is hot. When it cycles, a little of the energy lands in the wrong hour. Boost kWh is placed where the integration saw a boost running in its polls; a boost it did not see, and any day whose weekday has no window in the current programme, shows in the first hour of that day. Each day's windows are remembered when the day is first seen, so editing the programme later does not move earlier days; days from before that was kept use the programme as it is now.
+- To use the energy in the Energy dashboard, add the statistic "Secure E7 Energy" (not the Energy Today sensor) as an individual device. The unit only meters whole days, so the hours are worked out. Off-peak kWh is placed from the start of that weekday's window for as many minutes as the element actually ran, which matches the real burn when the thermostat keeps the element on until the cylinder is hot. When it cycles, some of the energy lands in the wrong hour. Boost kWh is placed where the integration saw a boost running in its polls; a boost it did not see, and any day whose weekday has no window in the current programme, shows in the first hour of that day. Each day's windows are remembered when the day is first seen, so editing the programme later does not move earlier days; days from before that was kept use the programme as it is now.
 - The Energy Today sensors have no state class, because the unit fills its rows in late and the Energy dashboard would book them to the wrong hour. If an earlier version gave them one, Home Assistant may show a repair under Developer tools, Statistics saying the entity no longer has a state class. It is safe to choose Delete for those.
 - Energy figures come from the unit's own meter, which counts amp-hours. They are converted at a fixed 230 V, the same way the Secure app does it. A real supply varies a little either side of that, so treat the kWh as close rather than exact.
-- If you used the old Follow Schedule switch, it is now the Timed Boost switch. It keeps its entity id (`switch.immersion_follow_schedule` on an existing install), so automations carry on working, but they now control the boost programme only.
+- If you used the old Follow Schedule switch, it is now the Timed Boost switch. It keeps its entity id (by default `switch.immersion_heater_follow_schedule`), so automations carry on working, but they now control the boost programme only.
 - Only tested on one unit (an E7+ two-channel, HardwareType 65). Other versions may behave differently. If yours doesn't work, please open an issue.
 - Not affiliated with or endorsed by Secure Controls or Horstmann. Use at your own risk.
 
