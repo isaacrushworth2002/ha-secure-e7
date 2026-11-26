@@ -40,6 +40,12 @@ def _local(day: date, minute: int, tz: tzinfo) -> datetime:
     return wall.astimezone(timezone.utc)
 
 
+def day_floor(ts: int, tz: tzinfo = timezone.utc) -> datetime:
+    """The earliest hour any of a row's energy can be placed in."""
+    midnight = _local(row_date(ts, tz), 0, tz).replace(minute=0, second=0, microsecond=0)
+    return min(midnight, day_start(ts, tz))
+
+
 def _minutes(hhmm: str) -> int:
     hours, minutes = hhmm.split(":")
     return int(hours) * 60 + int(minutes)

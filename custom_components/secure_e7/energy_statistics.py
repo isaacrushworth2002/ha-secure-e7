@@ -26,7 +26,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
-from .energy import carry_stale_hours, daily_statistics
+from .energy import carry_stale_hours, daily_statistics, day_floor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -65,16 +65,15 @@ async def async_import_daily_energy(
 
     for suffix, name, key in SERIES:
         stat_id = statistic_id(mac, suffix)
-        first = daily_statistics(
-            days, key, tz=tz, schedule=schedule, boosts=boosts, now=now, snapshots=snapshots,
-            window_tz=window_tz,
-        )
-        if not first:
+        stamps = [row["ts"] for row in days if row.get(key) is not None]
+        if not stamps:
             continue
-        first_start = first[0]["start"]
-        earlier = await recorded(stat_id, dt_util.utc_from_timestamp(0), first_start)
+        # Split at the start of the oldest day, not at its first row now: an earlier
+        # import may have placed that day's energy in an earlier hour.
+        floor = day_floor(min(stamps), tz)
+        earlier = await recorded(stat_id, dt_util.utc_from_timestamp(0), floor)
         base = (earlier or [{}])[-1].get("sum") or 0.0
-        later = await recorded(stat_id, first_start, None)
+        later = await recorded(stat_id, floor, None)
         rows = carry_stale_hours(
             daily_statistics(days, key, base, tz, schedule, boosts, now, snapshots, window_tz),
             base,

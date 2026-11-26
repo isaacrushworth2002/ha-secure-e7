@@ -150,3 +150,36 @@ def test_the_series_are_placed_in_the_hours_the_element_ran(importer):
     meta, rows = added[0]
     assert [(r["start"].hour, r["sum"]) for r in rows] == [(2, 3.0), (3, 4.0)]
     assert [r["start"].hour for r in added[2][1]] == [2, 3]
+
+
+def test_a_day_moved_to_a_later_hour_is_not_counted_twice(importer):
+    module, added, _, _ = importer
+    stored = {}
+
+    def during(hass, start, end, ids, *rest):
+        stat = next(iter(ids))
+        return {
+            stat: [
+                {"start": hour.timestamp(), "sum": total}
+                for hour, total in sorted(stored.get(stat, {}).items())
+                if hour >= start and (end is None or hour < end)
+            ]
+        }
+
+    module.statistics_during_period = during
+
+    def run(*args):
+        added.clear()
+        asyncio.run(module.async_import_daily_energy(None, "AA:BB:CC:DD:EE:FF", *args))
+        for meta, rows in added:
+            stored.setdefault(meta["statistic_id"], {}).update(
+                {row["start"]: row["sum"] for row in rows}
+            )
+
+    row = {"ts": T0, "total_kwh": 6.0, "boost_kwh": 0.0, "offpeak_kwh": 6.0, "offpeak_actual_h": 2.0}
+    names = "monday tuesday wednesday thursday friday saturday sunday".split()
+    run([row])  # the schedule has not been read yet
+    run([row], {name: [{"on": "02:15", "off": "06:00"}] for name in names})
+    sums = [total for _, total in sorted(stored["secure_e7:aabbccddeeff_energy"].items())]
+    assert sums == [0.0, 2.25, 5.25, 6.0]
+
