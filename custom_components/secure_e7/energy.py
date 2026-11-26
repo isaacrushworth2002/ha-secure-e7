@@ -40,10 +40,17 @@ def _local(day: date, minute: int, tz: tzinfo) -> datetime:
     return wall.astimezone(timezone.utc)
 
 
+def _boundary(day: date, ts: int, tz: tzinfo) -> datetime:
+    """The hour where `day`'s statistics begin and the day before's have ended."""
+    midnight = _local(day, 0, tz).replace(minute=0, second=0, microsecond=0)
+    if ts % SECONDS_PER_DAY == 0:
+        midnight = min(midnight, datetime.combine(day, time(), tzinfo=timezone.utc))
+    return midnight
+
+
 def day_floor(ts: int, tz: tzinfo = timezone.utc) -> datetime:
     """The earliest hour any of a row's energy can be placed in."""
-    midnight = _local(row_date(ts, tz), 0, tz).replace(minute=0, second=0, microsecond=0)
-    return min(midnight, day_start(ts, tz))
+    return _boundary(row_date(ts, tz), ts, tz)
 
 
 def _minutes(hhmm: str) -> int:
@@ -163,6 +170,11 @@ def daily_statistics(
         if key != "offpeak_kwh":
             boost = float(row.get("boost_kwh") or 0.0) if key == "total_kwh" else float(row[key])
             _add(placed, spread(boost, boost_spans(boosts or [], day, tz, now)))
+        # A run late on the unit's clock can reach into the next day's hours, which
+        # a later import treats as that day's.
+        latest = _boundary(day + timedelta(days=1), row["ts"], tz) - timedelta(hours=1)
+        for hour in [hour for hour in placed if hour > latest]:
+            placed[latest] = placed.get(latest, 0.0) + placed.pop(hour)
         value = float(row[key])
         if value >= 0 and sum(placed.values()) > value:
             scale = value / sum(placed.values())
