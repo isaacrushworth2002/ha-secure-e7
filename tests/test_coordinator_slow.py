@@ -330,3 +330,29 @@ def test_snapshots_and_boosts_come_back_after_a_restart_and_junk_is_ignored(coor
     c2._boost_store.saved = ["not", "a", "dict"]
     asyncio.run(c2._load_boosts())
     assert c2._boosts == [] and c2._programmes == {}
+
+
+def test_a_retried_write_is_sent_before_a_later_one(coordinator_env):
+    c = prepare(coordinator_env)
+    sent = []
+
+    async def request(hi, si, args=None):
+        await asyncio.sleep(0)
+        sent.append(args[1]["D"])
+        if len(sent) == 1:
+            raise TimeoutError
+        return {"R": []}
+
+    c._request = request
+    c.data = {}
+
+    async def both():
+        boost = asyncio.create_task(c._write(1, 1, {"D": 60}, {"hot_water_on": True}))
+        await asyncio.sleep(0)
+        await c._write(1, 1, {"D": 0}, {"hot_water_on": False})
+        await boost
+
+    asyncio.run(both())
+    assert sent == [60, 60, 0]
+    assert c.data["hot_water_on"] is False
+

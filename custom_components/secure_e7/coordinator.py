@@ -139,6 +139,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._conn_logged = False
         self._rx = Reassembler()
         self._lock = asyncio.Lock()
+        self._write_lock = asyncio.Lock()  # keeps writes and their retries in order
         self._hw_boi: int | None = None  # hot-water channel business-object id
         self._energy_wh = 0.0  # estimated, integrated while the element is on
         self._last_energy_ts: float | None = None
@@ -774,13 +775,14 @@ class SecureE7Coordinator(DataUpdateCoordinator):
             if isinstance(reply, dict) and reply.get("E") is not None:
                 raise HomeAssistantError(f"The heater refused the write: {reply['E']}")
 
-        try:
-            await with_retries(send, WRITE_RETRIES, UpdateFailed, DeviceUnreachable)
-        except UpdateFailed as err:
-            raise HomeAssistantError(f"Could not write to the heater: {err}") from err
-        self._pending_write.set(expected, time.monotonic(), WRITE_SETTLE_SECONDS)
-        if self.data is not None:
-            self._publish({**self.data, **expected})
+        async with self._write_lock:
+            try:
+                await with_retries(send, WRITE_RETRIES, UpdateFailed, DeviceUnreachable)
+            except UpdateFailed as err:
+                raise HomeAssistantError(f"Could not write to the heater: {err}") from err
+            self._pending_write.set(expected, time.monotonic(), WRITE_SETTLE_SECONDS)
+            if self.data is not None:
+                self._publish({**self.data, **expected})
         if self._cancel_confirm is not None:
             self._cancel_confirm()
         self._cancel_confirm = async_call_later(
