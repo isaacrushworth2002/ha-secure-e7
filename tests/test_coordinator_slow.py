@@ -356,3 +356,11 @@ def test_a_retried_write_is_sent_before_a_later_one(coordinator_env):
     assert sent == [60, 60, 0]
     assert c.data["hot_water_on"] is False
 
+
+def test_a_write_still_queued_at_shutdown_does_not_reconnect(coordinator_env):
+    c = prepare(coordinator_env)
+    c._closed = True
+    with pytest.raises(coordinator_env.exceptions.HomeAssistantError, match="shutting down"):
+        asyncio.run(c._write(1, 1, {"D": 0}, {}))
+    assert "connect" not in c.events
+

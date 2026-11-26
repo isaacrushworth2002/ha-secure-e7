@@ -140,6 +140,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         self._rx = Reassembler()
         self._lock = asyncio.Lock()
         self._write_lock = asyncio.Lock()  # keeps writes and their retries in order
+        self._closed = False
         self._hw_boi: int | None = None  # hot-water channel business-object id
         self._energy_wh = 0.0  # estimated, integrated while the element is on
         self._last_energy_ts: float | None = None
@@ -253,6 +254,8 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         finally:
             self._waiting -= 1
         try:
+            if self._closed:
+                raise HomeAssistantError("The integration is shutting down")
             limit = asyncio.timeout(OPERATION_TIMEOUT_SECONDS)
             try:
                 async with limit:
@@ -835,6 +838,7 @@ class SecureE7Coordinator(DataUpdateCoordinator):
         )
 
     async def async_shutdown(self) -> None:
+        self._closed = True
         await super().async_shutdown()
         if self._cancel_confirm is not None:
             self._cancel_confirm()
